@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import uuid
 import logging
 import threading
 from pathlib import Path
@@ -209,7 +210,7 @@ class SavedFileService:
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+07:00")
             now_wib = time.strftime("%d %b %Y, %H:%M WIB")
 
-            file_id = item.get("id") or f"doc-{int(time.time()*1000)}"
+            file_id = item.get("id") or f"doc-{int(time.time()*1000)}-{uuid.uuid4().hex[:6]}"
             
             # Clean up title if empty
             title = item.get("title", "").strip()

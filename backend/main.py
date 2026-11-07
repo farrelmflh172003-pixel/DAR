@@ -63,26 +63,55 @@ async def add_security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https: blob:; "
+        "media-src 'self' data: blob:; "
+        "connect-src 'self' ws: wss: https: http:; "
+        "frame-ancestors 'self';"
+    )
+    # HSTS if accessed via HTTPS or forwarded proto
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if request.url.scheme == "https" or forwarded_proto == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
-# Robust CORS Configuration:
+# Strict Enterprise CORS Configuration:
+is_production = settings.ENV.lower() in ("staging", "production")
 cors_origins = [o.strip() for o in settings.CORS_ORIGINS if o.strip()]
-if "*" in cors_origins:
+
+if is_production:
+    # Production strictly forbids wildcard origins with credentials
+    whitelisted = [o for o in cors_origins if o != "*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^https?://.*$",
+        allow_origins=whitelisted,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
     )
 else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Development: Allow local development origins safely
+    if "*" in cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
 @app.on_event("startup")
 async def validate_staging_and_production_security_invariants():
@@ -94,6 +123,11 @@ async def validate_staging_and_production_security_invariants():
             raise RuntimeError("CRITICAL SECURITY ERROR: ALLOW_ANONYMOUS_DEV cannot be True in staging or production mode.")
         if not settings.JWT_SECRET_KEY or len(settings.JWT_SECRET_KEY) < 32 or "insecure" in settings.JWT_SECRET_KEY.lower():
             raise RuntimeError("CRITICAL SECURITY ERROR: Weak, insecure, or missing JWT_SECRET_KEY in staging or production mode.")
+        if "*" in settings.CORS_ORIGINS:
+            raise RuntimeError(
+                "CRITICAL SECURITY ERROR: Wildcard '*' is strictly forbidden in CORS_ORIGINS for staging and production environments. "
+                "Specify explicit trusted origins (e.g., https://ai-hub.menkopolkam.go.id)."
+            )
         if settings.WORKERS > 1:
             raise RuntimeError(
                 f"CRITICAL TOPOLOGY ERROR: Multi-worker configuration (WORKERS={settings.WORKERS}) is strictly forbidden. "
@@ -486,7 +520,10 @@ async def text_to_speech(payload: TTSRequest):
 async def extract_document(payload: DocumentExtractRequest):
     import base64
     try:
-        data = base64.b64decode(payload.file_base64)
+        raw_b64 = payload.file_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        data = base64.b64decode(raw_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Data file base64 tidak valid: {str(e)}")
     
@@ -1008,9 +1045,38 @@ if DIST_DIR.exists():
         # Do not intercept API or WebSocket routes
         if full_path.startswith("api/") or full_path.startswith("ws/") or full_path == "api" or full_path == "ws":
             raise HTTPException(status_code=404, detail="API endpoint not found")
-        target_file = DIST_DIR / full_path
-        if target_file.is_file():
-            return FileResponse(target_file)
+        
+        # Guard against Directory Traversal and system file access
+        lower_path = full_path.lower()
+        if (
+            ".." in full_path or 
+            full_path.startswith("/") or
+            lower_path.startswith("etc/") or
+            lower_path.startswith("proc/") or
+            lower_path.startswith("sys/") or
+            lower_path.startswith("windows/") or
+            "passwd" in lower_path or
+            "shadow" in lower_path
+        ):
+            raise HTTPException(status_code=403, detail="Directory traversal is forbidden.")
+
+        try:
+            resolved_dist = DIST_DIR.resolve()
+            target_file = (DIST_DIR / full_path).resolve()
+            if not str(target_file).startswith(str(resolved_dist)):
+                raise HTTPException(status_code=403, detail="Access denied")
+            if target_file.is_file():
+                return FileResponse(target_file)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+        # If requesting a file asset with extension that doesn't exist, return 404 instead of SPA index
+        last_segment = full_path.split("/")[-1]
+        if "." in last_segment and not last_segment.endswith(".html"):
+            raise HTTPException(status_code=404, detail="File asset not found")
+
         index_file = DIST_DIR / "index.html"
         if index_file.is_file():
             return FileResponse(index_file)

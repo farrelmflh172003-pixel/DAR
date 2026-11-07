@@ -15,6 +15,15 @@ def test_security_headers_middleware():
     assert res.headers.get("X-Content-Type-Options") == "nosniff"
     assert res.headers.get("X-Frame-Options") == "SAMEORIGIN"
     assert res.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    assert "default-src 'self'" in res.headers.get("Content-Security-Policy", "")
+    assert "microphone=(self)" in res.headers.get("Permissions-Policy", "")
+
+def test_path_traversal_defense():
+    """Verify directory traversal attempts are blocked or fail safe."""
+    res = client.get("/../../etc/passwd")
+    assert res.status_code in (400, 403, 404)
+    res_parent = client.get("/../backend/config.py")
+    assert res_parent.status_code in (400, 403, 404)
 
 def test_api_health_endpoint():
     """Verify health endpoint returns operational status and server details."""

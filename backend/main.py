@@ -274,8 +274,8 @@ async def list_scenarios():
     }
 
 @app.get("/api/saved-files")
-async def list_saved_files(sort_order: str = "oldest_first"):
-    """Lists all saved, listed, and documented session files. Defaults to oldest first."""
+async def list_saved_files(sort_order: str = "newest_first"):
+    """Lists all saved, listed, and documented session files. Defaults to newest first."""
     return saved_file_service.list_files(sort_order=sort_order)
 
 @app.get("/api/saved-files/{file_id}")

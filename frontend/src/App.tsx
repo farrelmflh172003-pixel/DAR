@@ -88,11 +88,25 @@ export const App: React.FC = () => {
         const data: SavedFile[] = await res.json();
         setSavedFiles(data);
         if (data && data.length > 0) {
-          // If active workspace is empty, auto-load the most recent saved session
+          // If active workspace is empty, auto-load the most recent valid saved session
           setSessionData((current) => {
             if (!current.canonical_question?.id && !current.canonical_question?.original_text) {
-              const latest = data[0];
-              setTimeout(() => handleLoadSavedFile(latest), 0);
+              const validDoc = data.find((f: SavedFile) => {
+                const isStressTest = f.title?.startsWith('Concurrent Stress') || f.title?.startsWith('Concurrency Audit');
+                const hasContent = Boolean(
+                  (f.selected_answer && f.selected_answer.trim()) ||
+                  (f.chatgpt_answers?.main_answer && f.chatgpt_answers.main_answer.trim()) ||
+                  (f.gemini_answers?.main_answer && f.gemini_answers.main_answer.trim()) ||
+                  (f.ai_answers?.main_answer && f.ai_answers.main_answer.trim()) ||
+                  (f.original_audio_text && f.original_audio_text.trim())
+                );
+                return !isStressTest && hasContent;
+              });
+              if (validDoc) {
+                setTimeout(() => handleLoadSavedFile(validDoc), 0);
+              } else {
+                setTimeout(() => fetchScenario('natuna_unclos'), 0);
+              }
             }
             return current;
           });

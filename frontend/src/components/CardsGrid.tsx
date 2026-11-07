@@ -599,6 +599,36 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
     ? (translatedEnglishText.trim() || combinedSelectedText.trim())
     : combinedSelectedText.trim();
 
+  const getSelectedSourceLabel = (): string => {
+    if (selectedCardIds.length === 0) {
+      if (data.selected_answer) return 'Jawaban Tersimpan';
+      return 'Belum Ada Pilihan';
+    }
+    if (selectedCardIds.length === 1) {
+      const id = selectedCardIds[0];
+      switch (id) {
+        case 3: return 'ChatGPT (Utama)';
+        case 4: return 'ChatGPT (Singkat)';
+        case 5: return 'ChatGPT (Analisis)';
+        case 12: return 'ChatGPT (Isu Lapangan)';
+        case 13: return 'ChatGPT (Rekomendasi)';
+        case 14: return 'ChatGPT (Peran Kemenko)';
+        case 15: return 'ChatGPT (Agenda Lapangan)';
+        case 20: return 'ChatGPT (Berita Terkini)';
+        case 8: return 'Gemini (Utama)';
+        case 9: return 'Gemini (Singkat)';
+        case 10: return 'Gemini (Analisis)';
+        case 16: return 'Gemini (Isu Kerentanan)';
+        case 17: return 'Gemini (Rekomendasi)';
+        case 18: return 'Gemini (Fungsi Pengawalan)';
+        case 19: return 'Gemini (Agenda Pemantauan)';
+        case 21: return 'Gemini (Berita Faktual)';
+        default: return `Kartu #${id}`;
+      }
+    }
+    return `${selectedCardIds.length} Kartu Tergabung`;
+  };
+
   const toggleCardSelection = (cardId: SelectableCardId) => {
     stopAllAudio();
     setSelectedCardIds(prev => {
@@ -611,6 +641,7 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
   useEffect(() => {
     stopAllAudio();
     lastTranslatedSourceRef.current = '';
+    setTranslatedEnglishText('');
     if (data.selected_answer || chatgpt?.main_answer || gemini?.main_answer) {
       if (data.selected_answer && data.selected_answer.trim()) {
         const matched: SelectableCardId[] = [];
@@ -2061,6 +2092,14 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
                 ID (Indonesia)
               </button>
             </div>
+
+            {/* Sumber Jawaban Pill */}
+            <span
+              className="text-[10px] font-mono font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shadow-xs"
+              title="Sumber data jawaban Card 11"
+            >
+              Sumber: {getSelectedSourceLabel()}
+            </span>
 
             {selectedCardIds.length > 0 ? (
               <button

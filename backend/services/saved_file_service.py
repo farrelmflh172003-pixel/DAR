@@ -186,14 +186,23 @@ class SavedFileService:
         with self._lock:
             return self._write_all_unlocked(data)
 
-    def list_files(self, sort_order: str = "oldest_first") -> List[Dict[str, Any]]:
+    def list_files(self, sort_order: str = "newest_first") -> List[Dict[str, Any]]:
         with self._lock:
             files = self._read_all_unlocked()
-            # Sort oldest first (paling lama ke paling terbaru) as requested
-            if sort_order == "newest_first":
-                files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=True)
+            def _sort_key(item: Dict[str, Any]):
+                ca = item.get("created_at") or ""
+                if ca:
+                    return ca
+                fid = item.get("id") or ""
+                parts = fid.split("-")
+                if len(parts) >= 2 and parts[1].isdigit():
+                    return f"epoch_{int(parts[1]):015d}"
+                return item.get("timestamp") or ""
+
+            if sort_order == "oldest_first":
+                files.sort(key=_sort_key, reverse=False)
             else:
-                files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=False)
+                files.sort(key=_sort_key, reverse=True)
             return files
 
     def get_file(self, file_id: str) -> Optional[Dict[str, Any]]:

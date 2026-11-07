@@ -596,8 +596,8 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
 
   // Determine active text for Card 11 based on language toggle (default 'en')
   const currentCard11Text = selectedAnswerLang === 'en'
-    ? (translatedEnglishText || combinedSelectedText)
-    : combinedSelectedText;
+    ? (translatedEnglishText.trim() || combinedSelectedText.trim())
+    : combinedSelectedText.trim();
 
   const toggleCardSelection = (cardId: SelectableCardId) => {
     stopAllAudio();
@@ -610,22 +610,27 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
 
   useEffect(() => {
     stopAllAudio();
+    lastTranslatedSourceRef.current = '';
     if (data.selected_answer || chatgpt?.main_answer || gemini?.main_answer) {
-      if (selectedCardIds.length === 0) {
-        if (data.selected_answer && data.selected_answer.trim()) {
-          const matched: SelectableCardId[] = [];
-          const candidateCards: SelectableCardId[] = [3, 8, 4, 9, 5, 10, 14, 18, 15, 19, 12, 16, 13, 17, 20, 21];
-          for (const cid of candidateCards) {
-            const content = getCardContent(cid).trim();
-            if (content && data.selected_answer.includes(content)) {
-              matched.push(cid);
-            }
-          }
-          if (matched.length > 0) {
-            setSelectedCardIds(matched);
-            return;
+      if (data.selected_answer && data.selected_answer.trim()) {
+        const matched: SelectableCardId[] = [];
+        const candidateCards: SelectableCardId[] = [3, 8, 4, 9, 5, 10, 14, 18, 15, 19, 12, 16, 13, 17, 20, 21];
+        for (const cid of candidateCards) {
+          const content = getCardContent(cid).trim();
+          if (content && data.selected_answer.includes(content)) {
+            matched.push(cid);
           }
         }
+        if (matched.length > 0) {
+          setSelectedCardIds(matched);
+          return;
+        }
+      }
+      if (chatgpt?.main_answer && chatgpt.main_answer.trim()) {
+        setSelectedCardIds([3]);
+      } else if (gemini?.main_answer && gemini.main_answer.trim()) {
+        setSelectedCardIds([8]);
+      } else {
         setSelectedCardIds([3]);
       }
     }
@@ -2143,9 +2148,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
         }
       >
         <div className="min-h-[70px] select-text">
-          {isTranslatingSelected && selectedAnswerLang === 'en' && !translatedEnglishText ? (
-            <div className="flex items-center gap-2 text-xs text-blue-400 py-3">
-              <Loader2 size={15} className="animate-spin" />
+          {isTranslatingSelected && selectedAnswerLang === 'en' && !translatedEnglishText && !combinedSelectedText ? (
+            <div className="flex items-center gap-2 text-xs text-blue-600 font-medium py-3">
+              <Loader2 size={15} className="animate-spin text-blue-600" />
               <span>Menerjemahkan ke Bahasa Inggris...</span>
             </div>
           ) : currentCard11Text ? (
@@ -2153,8 +2158,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
               <ReactMarkdown rehypePlugins={[rehypeRaw]}>{currentCard11Text}</ReactMarkdown>
             </div>
           ) : (
-            <div className="text-xs text-zinc-500 italic py-2">
-              Memuat jawaban terpilih...
+            <div className="text-xs text-zinc-600 italic py-3 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              <span>Belum ada jawaban terpilih. Rekam suara mikrofon atau ajukan pertanyaan untuk menghasilkan analisis dan jawaban terpilih terbaru.</span>
             </div>
           )}
         </div>

@@ -868,7 +868,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
     );
 
     // Bottom Card (Jawaban Terpilih)
-    setEditSelectedAnswer(f.selected_answer || f.ai_answers?.main_answer || '');
+    setEditSelectedAnswer(f.selected_answer || f.ai_answers?.main_answer || f.chatgpt_answers?.main_answer || f.gemini_answers?.main_answer || '');
   };
 
   const handleTranslateAll = async () => {

@@ -85,8 +85,25 @@ export const App: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/saved-files`);
       if (res.ok) {
-        const data = await res.json();
+        const data: SavedFile[] = await res.json();
         setSavedFiles(data);
+        if (data && data.length > 0) {
+          // If active workspace is empty, auto-load the most recent saved session
+          setSessionData((current) => {
+            if (!current.canonical_question?.id && !current.canonical_question?.original_text) {
+              const latest = data[0];
+              setTimeout(() => handleLoadSavedFile(latest), 0);
+            }
+            return current;
+          });
+        } else {
+          setSessionData((current) => {
+            if (!current.canonical_question?.id && !current.canonical_question?.original_text) {
+              setTimeout(() => fetchScenario('natuna_unclos'), 0);
+            }
+            return current;
+          });
+        }
       }
     } catch (err) {
       console.warn('Could not fetch saved files list:', err);
@@ -231,6 +248,7 @@ export const App: React.FC = () => {
         title: titleSummary,
         original_audio_text: origText,
         translated_indonesian_text: transText,
+        selected_answer: newSet.selected_answer || newSet.chatgpt?.main_answer || newSet.gemini?.main_answer || '',
         ai_answers: {
           main_answer: newSet.gemini?.main_answer || newSet.chatgpt?.main_answer || '',
           concise_answer: newSet.gemini?.concise_answer || newSet.chatgpt?.concise_answer || '',

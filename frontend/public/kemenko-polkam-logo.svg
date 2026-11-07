@@ -1,0 +1,26 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="40" height="40" fill="none">
+  <!-- Official Emblem Base / Garuda Silhouette for Kemenko Polkam -->
+  <g transform="translate(10, 8) scale(0.83)">
+    <!-- Shield / Perisai -->
+    <path d="M60 14 C48 14 36 18 36 26 C36 50 44 80 60 92 C76 80 84 50 84 26 C84 18 72 14 60 14 Z" fill="#FFFFFF" stroke="#000000" stroke-width="2.5"/>
+    <path d="M60 20 L60 86" stroke="#000000" stroke-width="2"/>
+    <path d="M38 52 L82 52" stroke="#000000" stroke-width="2"/>
+    
+    <!-- Garuda Wings -->
+    <path d="M36 28 C24 20 10 24 4 36 C8 48 18 56 34 58 C26 64 16 66 12 76 C20 80 32 78 40 70" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M84 28 C96 20 110 24 116 36 C112 48 102 56 86 58 C94 64 104 66 108 76 C100 80 88 78 80 70" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>
+    
+    <!-- Garuda Head & Crest -->
+    <path d="M60 6 C56 6 54 9 55 12 C56 15 58 16 60 16 C62 16 64 15 65 12 C66 9 64 6 60 6 Z" fill="#000000"/>
+    <path d="M63 11 L69 13 L63 15 Z" fill="#000000"/>
+    
+    <!-- Tail Feathers -->
+    <path d="M52 86 C50 96 46 104 44 112 C52 110 60 108 60 100 C60 108 68 110 76 112 C74 104 70 96 68 86" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Central Star / Bintang -->
+    <polygon points="60,30 62,36 68,36 63,40 65,46 60,42 55,46 57,40 52,36 58,36" fill="#000000"/>
+    
+    <!-- Scroll / Pita Bhinneka Tunggal Ika -->
+    <path d="M32 98 C46 95 74 95 88 98 C82 103 68 102 60 102 C52 102 38 103 32 98 Z" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+  </g>
+</svg>

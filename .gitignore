@@ -1,0 +1,26 @@
+# Environment variables and secrets
+.env
+*.env
+backend/.env
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# Node.js and Frontend builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

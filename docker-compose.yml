@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # MENKOPOLKAM AI HUB - Unified Application (API + Frontend SPA)
+  # ==============================================================================
+  menkopolkam-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: menkopolkam-ai-hub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - MARIADB_HOST=${MARIADB_HOST:-db}
+      - MARIADB_PORT=${MARIADB_PORT:-3306}
+      - MARIADB_USER=${MARIADB_USER:-root}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-menkopolkam_db_secret}
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-menkopolkam_ai_hub}
+    volumes:
+      # Persistent storage for saved analyses, questions, and uploaded documents
+      - menkopolkam_data:/app/backend/data
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ==============================================================================
+  # MariaDB Database (Optional - App falls back to JSON storage if DB is disabled)
+  # ==============================================================================
+  db:
+    image: mariadb:11.4
+    container_name: menkopolkam-db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MARIADB_PASSWORD:-menkopolkam_db_secret}
+      - MYSQL_DATABASE=${MARIADB_DATABASE:-menkopolkam_ai_hub}
+    ports:
+      - "3306:3306"
+    volumes:
+      - menkopolkam_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  menkopolkam_data:
+    driver: local
+  menkopolkam_db_data:
+    driver: local
+

@@ -1,0 +1,62 @@
+# ==============================================================================
+# MENKOPOLKAM AI HUB - Nginx Reverse Proxy & SSL Production Configuration
+# ==============================================================================
+# Letakkan di: /etc/nginx/sites-available/menkopolkam.conf
+# Lalu aktifkan: ln -s /etc/nginx/sites-available/menkopolkam.conf /etc/nginx/sites-enabled/
+# ==============================================================================
+
+server {
+    listen 80;
+    server_name ai-hub.menkopolkam.go.id; # Ganti dengan domain/IP Anda
+
+    # Redirect seluruh HTTP ke HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ai-hub.menkopolkam.go.id; # Ganti dengan domain/IP Anda
+
+    # Sertifikat SSL (Gunakan Certbot Let's Encrypt atau Sertifikat Instansi)
+    # ssl_certificate /etc/letsencrypt/live/ai-hub.menkopolkam.go.id/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/ai-hub.menkopolkam.go.id/privkey.pem;
+
+    # Optimalisasi SSL & Keamanan
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Ukuran unggah maksimum untuk dokumen PDF / Word (hingga 50MB)
+    client_max_body_size 50M;
+
+    # Gzip Compression untuk SPA & API
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+
+    # Proxy Utama ke Menkopolkam AI Hub Container / Process (Port 8000)
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # WebSocket Support (Wajib untuk Gemini Live Realtime & Audio streaming)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Forwarded Headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts untuk Streaming LLM & Audio TTS Panjang
+        proxy_connect_timeout 90s;
+        proxy_send_timeout 90s;
+        proxy_read_timeout 90s;
+        proxy_buffering off;
+    }
+}
+

@@ -1,0 +1,96 @@
+[
+  {
+    "id": "live-1794053695",
+    "title": "Apa isu terkini listyoso sigit.",
+    "timestamp": "19:14:26 WIB",
+    "speaker": "Delegasi / Penanya",
+    "original_audio_text": "Apa isu terkini listyoso sigit.",
+    "detected_language": "id",
+    "detected_language_name": "Bahasa Indonesia",
+    "translated_indonesian_text": "Apa isu terkini listyoso sigit.",
+    "ai_answers": {
+      "main_answer": "Dinamika politik Indonesia saat ini sedang terguncang oleh skandal penyadapan yang menyeret nama Listyo Sigit. Isu utama mencakup pencopotan resminya dari posisi strategis di KSP oleh Presiden Prabowo Subianto pada 4 November 2026. Penyadapan ini dianggap sebagai 'senjata' untuk menciptakan kekacauan politik dan dicurigai memiliki motif makar. Selain aspek domestik, keterlibatan media asing yang menyoroti pergerakan militer menambah kompleksitas isu ini, memposisikan kasus ini sebagai krisis keamanan nasional yang serius yang memerlukan penanganan hukum dan politik yang luar biasa.",
+      "concise_answer": "Skandal penyadapan oleh Listyo Sigit terhadap Presiden Prabowo telah diklasifikasikan sebagai dugaan makar, memicu pencopotan jabatan dan pengawasan ketat terhadap stabilitas nasional.",
+      "brief_analysis": "Implikasi strategis dari kasus ini adalah perlunya redefinisi wewenang intelijen dan pengawasan ketat terhadap pejabat yang memiliki akses ke teknologi surveilans. Kasus ini berpotensi mengubah lanskap peta kekuatan politik menjelang konsolidasi pemerintahan Prabowo.",
+      "monitoring_issues": "Analisis menunjukkan adanya risiko kerentanan pada integritas sistem komunikasi kepresidenan dan potensi polarisasi di tingkat elit keamanan akibat isu makar dan mobilisasi militer.",
+      "resolution_recommendations": "Implementasi reformasi regulasi penyadapan, penguatan pengawasan internal (internal affairs) di lembaga keamanan, dan komunikasi publik yang masif untuk meredam spekulasi makar.",
+      "kemenko_role": "Kemenko Polkam memimpin sinkronisasi kebijakan keamanan nasional untuk memitigasi dampak politik dari skandal ini serta memastikan penegakan hukum berjalan tanpa mengganggu pelayanan publik.",
+      "field_monitoring_agenda": "Agenda pemantauan terpadu mencakup pengawasan terhadap potensi gejolak di daerah dan memastikan loyalitas tunggal aparat penegak hukum kepada negara.",
+      "latest_news": "Warta Ekonomi melaporkan penyadapan sebagai alat kekacauan politik (5 Nov); Wartakotalive menyoroti desakan pengusutan makar (6 Nov); CNBC Indonesia melaporkan kebocoran data penumpang SIA yang menyeret nama Listyo Sigit (4 Nov).",
+      "model_version": "GPT-4o & Gemini 1.5 Pro Hybrid"
+    },
+    "chatgpt_answers": {
+      "main_answer": "Isu terkini mengenai Listyo Sigit berfokus pada skandal penyadapan terhadap Presiden Prabowo yang berujung pada pencopotannya dari jabatan di Kantor Staf Presiden (KSP). Berdasarkan laporan per 4-6 November 2026, Istana mengungkapkan bahwa tindakan penyadapan tersebut bukan sekadar pelanggaran privasi, melainkan mengarah pada dugaan makar. Kasus ini telah memicu kegaduhan politik nasional dan sorotan media internasional, terutama terkait laporan mobilisasi militer dan upaya mengacaukan stabilitas politik Indonesia. Pemerintah melalui Syahganda telah menyatakan komitmen untuk melawan praktik 'politik busuk' penyadapan ini secara tuntas.",
+      "concise_answer": "Listyo Sigit resmi dicopot dari KSP oleh Presiden Prabowo setelah terungkap melakukan penyadapan yang diduga kuat sebagai tindakan makar untuk mengacaukan politik nasional.",
+      "brief_analysis": "Penyadapan terhadap kepala negara oleh pejabat tinggi merupakan pelanggaran keamanan tingkat tinggi yang menunjukkan adanya keretakan dalam loyalitas birokrasi. Penggunaan instrumen intelijen untuk kepentingan politik praktis ini merusak tatanan demokrasi dan keamanan nasional.",
+      "monitoring_issues": "Fokus utama adalah dugaan makar, kebocoran data penumpang SIA yang melibatkan data Listyo Sigit, mobilisasi militer yang disorot media asing, dan upaya destabilisasi politik melalui penyadapan.",
+      "resolution_recommendations": "Segera lakukan proses hukum transparan terkait dugaan makar, audit total alat penyadapan di lembaga negara, dan penguatan protokol keamanan siber kepresidenan.",
+      "kemenko_role": "Kemenko Polkam melakukan koordinasi lintas lembaga (Polri, TNI, BIN) untuk memastikan stabilitas tetap terjaga pasca pencopotan dan mengawal proses hukum agar tidak terjadi benturan antar-institusi.",
+      "field_monitoring_agenda": "Melakukan verifikasi faktual terhadap laporan mobilisasi militer di lapangan dan memantau respons internal di tubuh kepolisian serta KSP pasca reorganisasi mendadak.",
+      "latest_news": "Presiden Prabowo resmi mencopot Listyo Sigit dari KSP (4 Nov); Istana sebut penyadapan mengarah ke makar (4 Nov); Media asing sorot mobilisasi militer terkait kasus ini (4 Nov); Pemerintah umumkan lawan politik penyadapan (5 Nov).",
+      "model_version": "ChatGPT"
+    },
+    "gemini_answers": {
+      "main_answer": "Dinamika politik Indonesia saat ini sedang terguncang oleh skandal penyadapan yang menyeret nama Listyo Sigit. Isu utama mencakup pencopotan resminya dari posisi strategis di KSP oleh Presiden Prabowo Subianto pada 4 November 2026. Penyadapan ini dianggap sebagai 'senjata' untuk menciptakan kekacauan politik dan dicurigai memiliki motif makar. Selain aspek domestik, keterlibatan media asing yang menyoroti pergerakan militer menambah kompleksitas isu ini, memposisikan kasus ini sebagai krisis keamanan nasional yang serius yang memerlukan penanganan hukum dan politik yang luar biasa.",
+      "concise_answer": "Skandal penyadapan oleh Listyo Sigit terhadap Presiden Prabowo telah diklasifikasikan sebagai dugaan makar, memicu pencopotan jabatan dan pengawasan ketat terhadap stabilitas nasional.",
+      "brief_analysis": "Implikasi strategis dari kasus ini adalah perlunya redefinisi wewenang intelijen dan pengawasan ketat terhadap pejabat yang memiliki akses ke teknologi surveilans. Kasus ini berpotensi mengubah lanskap peta kekuatan politik menjelang konsolidasi pemerintahan Prabowo.",
+      "monitoring_issues": "Analisis menunjukkan adanya risiko kerentanan pada integritas sistem komunikasi kepresidenan dan potensi polarisasi di tingkat elit keamanan akibat isu makar dan mobilisasi militer.",
+      "resolution_recommendations": "Implementasi reformasi regulasi penyadapan, penguatan pengawasan internal (internal affairs) di lembaga keamanan, dan komunikasi publik yang masif untuk meredam spekulasi makar.",
+      "kemenko_role": "Kemenko Polkam memimpin sinkronisasi kebijakan keamanan nasional untuk memitigasi dampak politik dari skandal ini serta memastikan penegakan hukum berjalan tanpa mengganggu pelayanan publik.",
+      "field_monitoring_agenda": "Agenda pemantauan terpadu mencakup pengawasan terhadap potensi gejolak di daerah dan memastikan loyalitas tunggal aparat penegak hukum kepada negara.",
+      "latest_news": "Warta Ekonomi melaporkan penyadapan sebagai alat kekacauan politik (5 Nov); Wartakotalive menyoroti desakan pengusutan makar (6 Nov); CNBC Indonesia melaporkan kebocoran data penumpang SIA yang menyeret nama Listyo Sigit (4 Nov).",
+      "model_version": "Gemini"
+    },
+    "selected_answer": "Isu terkini mengenai Listyo Sigit berfokus pada skandal penyadapan terhadap Presiden Prabowo yang berujung pada pencopotannya dari jabatan di Kantor Staf Presiden (KSP). Berdasarkan laporan per 4-6 November 2026, Istana mengungkapkan bahwa tindakan penyadapan tersebut bukan sekadar pelanggaran privasi, melainkan mengarah pada dugaan makar. Kasus ini telah memicu kegaduhan politik nasional dan sorotan media internasional, terutama terkait laporan mobilisasi militer dan upaya mengacaukan stabilitas politik Indonesia. Pemerintah melalui Syahganda telah menyatakan komitmen untuk melawan praktik 'politik busuk' penyadapan ini secara tuntas.",
+    "notes": "Sesi transkripsi otomatis tercatat secara live.",
+    "created_at": "2026-11-07T19:14:55+07:00",
+    "updated_at": "2026-11-07T19:14:55+07:00"
+  },
+  {
+    "id": "live-1794052990",
+    "title": "Siapa pemenang balon d'or 2027? eh 2026",
+    "timestamp": "19:03:02 WIB",
+    "speaker": "Delegasi / Penanya",
+    "original_audio_text": "Siapa pemenang balon di or 2027? eh 2026",
+    "detected_language": "id",
+    "detected_language_name": "Bahasa Indonesia",
+    "translated_indonesian_text": "Siapa pemenang balon d'or 2027? eh 2026",
+    "ai_answers": {
+      "main_answer": "Penganugerahan Ballon d'Or untuk tahun 2026 dan 2027 merupakan agenda masa depan dalam kalender sepak bola internasional yang belum terlaksana atau belum diumumkan pemenangnya hingga November 2026. Analisis terhadap dinamika sepak bola dunia menunjukkan bahwa persaingan menuju penghargaan individu bergengsi ini sangat bergantung pada performa pemain di level klub (seperti Liga Champions) dan turnamen internasional utama.",
+      "concise_answer": "Belum ada data resmi mengenai pemenang Ballon d'Or 2026 dan 2027 karena jadwal penghargaan tersebut belum dilangsungkan.",
+      "brief_analysis": "Penghargaan Ballon d'Or merefleksikan performa puncak atlet sepak bola global, di mana pencapaian historis seperti rekor pencetak gol ke gawang puluhan klub berbeda di kompetisi elite eropa sering menjadi indikator performa jangka panjang.",
+      "monitoring_issues": "Tiada kerentanan stabilitas nasional atau gangguan keamanan yang timbul akibat belum diumumkannya pemenang Ballon d'Or 2026.",
+      "resolution_recommendations": "Memastikan informasi publik terkait hiburan olahraga disikapi secara proporsional tanpa menggeser fokus isu-isu strategis nasional.",
+      "kemenko_role": "Menjaga agar ruang informasi publik tetap kondusif dan fokus pada stabilitas keamanan nasional.",
+      "field_monitoring_agenda": "Fokus pemantauan lapangan diarahkan pada isu-isu prioritas strategis nasional, bukan pada agenda hiburan olahraga global.",
+      "latest_news": "Liputan media internasional dan nasional saat ini belum memuat pengumuman resmi pemenang Ballon d'Or 2026, sementara rekor-rekor historis pemain bintang seperti Messi tetap menjadi acuan data prestasi masa lalu.",
+      "model_version": "GPT-4o & Gemini 1.5 Pro Hybrid"
+    },
+    "chatgpt_answers": {
+      "main_answer": "Hingga tanggal sistem saat ini pada 07 November 2026, pemenang Ballon d'Or untuk tahun 2026 belum diumumkan secara resmi oleh France Football, dan tahun 2027 masih berada di masa depan. Berdasarkan data pemantauan real-time yang tersedia, belum ada rilis resmi mengenai pemenang ajang penghargaan tersebut untuk tahun 2026 maupun 2027.",
+      "concise_answer": "Pemenang Ballon d'Or 2026 dan 2027 belum diumumkan karena jadwal penganugerahan belum mencapai tahun tersebut atau belum resmi dirilis.",
+      "brief_analysis": "Penghargaan Ballon d'Or biasanya diumumkan pada paruh kedua setiap tahun kalender berdasarkan performa musim kompetisi sebelumnya. Pemantauan data menunjukkan belum ada informasi resmi terkait pemenang untuk edisi 2026 dan 2027.",
+      "monitoring_issues": "Belum ada isu krusial di bidang politik, hukum, dan keamanan terkait penghargaan individu sepak bola internasional ini.",
+      "resolution_recommendations": "Tidak diperlukan tindakan regulatif atau taktis dari Kemenko Polkam mengingat hal ini merupakan ranah hiburan dan olahraga swasta internasional.",
+      "kemenko_role": "Kemenko Polkam tidak memiliki mandat intervensi dalam penyelenggaraan penghargaan olahraga internasional swasta.",
+      "field_monitoring_agenda": "Tidak ada agenda peninjauan lapangan terkait topik penghargaan sepak bola ini.",
+      "latest_news": "Berdasarkan arsip berita, salah satu rekor historis Liga Champions mencatat Lionel Messi sebagai pionir yang menjebol gawang 40 klub berbeda, namun belum ada rilis berita terkini mengenai pemenang Ballon d'Or 2026.",
+      "model_version": "ChatGPT"
+    },
+    "gemini_answers": {
+      "main_answer": "Penganugerahan Ballon d'Or untuk tahun 2026 dan 2027 merupakan agenda masa depan dalam kalender sepak bola internasional yang belum terlaksana atau belum diumumkan pemenangnya hingga November 2026. Analisis terhadap dinamika sepak bola dunia menunjukkan bahwa persaingan menuju penghargaan individu bergengsi ini sangat bergantung pada performa pemain di level klub (seperti Liga Champions) dan turnamen internasional utama.",
+      "concise_answer": "Belum ada data resmi mengenai pemenang Ballon d'Or 2026 dan 2027 karena jadwal penghargaan tersebut belum dilangsungkan.",
+      "brief_analysis": "Penghargaan Ballon d'Or merefleksikan performa puncak atlet sepak bola global, di mana pencapaian historis seperti rekor pencetak gol ke gawang puluhan klub berbeda di kompetisi elite eropa sering menjadi indikator performa jangka panjang.",
+      "monitoring_issues": "Tiada kerentanan stabilitas nasional atau gangguan keamanan yang timbul akibat belum diumumkannya pemenang Ballon d'Or 2026.",
+      "resolution_recommendations": "Memastikan informasi publik terkait hiburan olahraga disikapi secara proporsional tanpa menggeser fokus isu-isu strategis nasional.",
+      "kemenko_role": "Menjaga agar ruang informasi publik tetap kondusif dan fokus pada stabilitas keamanan nasional.",
+      "field_monitoring_agenda": "Fokus pemantauan lapangan diarahkan pada isu-isu prioritas strategis nasional, bukan pada agenda hiburan olahraga global.",
+      "latest_news": "Liputan media internasional dan nasional saat ini belum memuat pengumuman resmi pemenang Ballon d'Or 2026, sementara rekor-rekor historis pemain bintang seperti Messi tetap menjadi acuan data prestasi masa lalu.",
+      "model_version": "Gemini"
+    },
+    "selected_answer": "Hingga tanggal sistem saat ini pada 07 November 2026, pemenang Ballon d'Or untuk tahun 2026 belum diumumkan secara resmi oleh France Football, dan tahun 2027 masih berada di masa depan. Berdasarkan data pemantauan real-time yang tersedia, belum ada rilis resmi mengenai pemenang ajang penghargaan tersebut untuk tahun 2026 maupun 2027.",
+    "notes": "Sesi transkripsi otomatis tercatat secara live.",
+    "created_at": "2026-11-07T19:03:10+07:00",
+    "updated_at": "2026-11-07T19:03:10+07:00"
+  }
+]

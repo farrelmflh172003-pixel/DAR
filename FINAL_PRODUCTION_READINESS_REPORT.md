@@ -155,3 +155,4 @@ Aplikasi **MENKOPOLKAM AI HUB** memenuhi seluruh standar kelayakan rilis produks
 **Rekomendasi Operasional**:
 * Gunakan file `.env` dengan `JWT_SECRET_KEY` acak minimal 32 karakter (`openssl rand -hex 32`).
 * Ikuti petunjuk lengkap pada berkas `PRODUCTION_DEPLOYMENT_GUIDE.md` untuk proses *go-live*.
+

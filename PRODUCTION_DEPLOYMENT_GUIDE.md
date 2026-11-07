@@ -208,3 +208,4 @@ docker run --rm -v menkopolkam_data:/data -v /backup:/backup alpine tar czf /bac
 | **Audio TTS tidak bersuara** | Kuota API key Gemini habis atau browser memblokir autoplay. | Periksa kuota API di Google AI Studio. Pastikan izin audio/mikrofon diizinkan di browser pengguna. |
 | **WebSocket gagal terhubung (Code 1008)** | Domain/IP server belum terdaftar di `CORS_ORIGINS`. | Tambahkan IP publik atau domain server ke parameter `CORS_ORIGINS` di file `.env`, lalu restart server. |
 | **Tampilan Card 11 kosong** | Data belum termuat sempurna. | Sistem kini memiliki auto-fallback ke Kartu 3 Jawaban Utama; cukup klik salah satu kartu respon untuk memicu pemutakhiran otomatis. |
+

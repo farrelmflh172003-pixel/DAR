@@ -90,3 +90,4 @@ def test_database_backup_and_restore_cycle():
         shutil.copy2(backup_path, SAVED_FILES_PATH)
         restored_files = test_service.list_files()
         assert not any(f["id"] == temp_item["id"] for f in restored_files)
+

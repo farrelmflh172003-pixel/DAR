@@ -2,6 +2,7 @@ import os
 import json
 import time
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
@@ -139,20 +140,23 @@ INITIAL_SEEDS = [
 class SavedFileService:
     def __init__(self):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._ensure_storage()
 
     def _ensure_storage(self):
-        if not SAVED_FILES_PATH.exists():
-            try:
-                with open(SAVED_FILES_PATH, "w", encoding="utf-8") as f:
-                    json.dump(INITIAL_SEEDS, f, ensure_ascii=False, indent=2)
-                logger.info("Initialized default saved files repository at %s", SAVED_FILES_PATH)
-            except Exception as e:
-                logger.error("Failed to initialize saved files: %s", e)
+        with self._lock:
+            if not SAVED_FILES_PATH.exists():
+                try:
+                    with open(SAVED_FILES_PATH, "w", encoding="utf-8") as f:
+                        json.dump(INITIAL_SEEDS, f, ensure_ascii=False, indent=2)
+                    logger.info("Initialized default saved files repository at %s", SAVED_FILES_PATH)
+                except Exception as e:
+                    logger.error("Failed to initialize saved files: %s", e)
 
-    def _read_all(self) -> List[Dict[str, Any]]:
-        self._ensure_storage()
+    def _read_all_unlocked(self) -> List[Dict[str, Any]]:
         try:
+            if not SAVED_FILES_PATH.exists():
+                return []
             with open(SAVED_FILES_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -162,7 +166,11 @@ class SavedFileService:
             logger.error("Error reading saved files: %s", e)
             return []
 
-    def _write_all(self, data: List[Dict[str, Any]]) -> bool:
+    def _read_all(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return self._read_all_unlocked()
+
+    def _write_all_unlocked(self, data: List[Dict[str, Any]]) -> bool:
         try:
             temp_path = SAVED_FILES_PATH.with_suffix(".tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
@@ -173,99 +181,108 @@ class SavedFileService:
             logger.error("Error writing saved files: %s", e)
             return False
 
+    def _write_all(self, data: List[Dict[str, Any]]) -> bool:
+        with self._lock:
+            return self._write_all_unlocked(data)
+
     def list_files(self, sort_order: str = "oldest_first") -> List[Dict[str, Any]]:
-        files = self._read_all()
-        # Sort oldest first (paling lama ke paling terbaru) as requested
-        if sort_order == "newest_first":
-            files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=True)
-        else:
-            files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=False)
-        return files
+        with self._lock:
+            files = self._read_all_unlocked()
+            # Sort oldest first (paling lama ke paling terbaru) as requested
+            if sort_order == "newest_first":
+                files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=True)
+            else:
+                files.sort(key=lambda x: (x.get("created_at", "") or x.get("timestamp", "")), reverse=False)
+            return files
 
     def get_file(self, file_id: str) -> Optional[Dict[str, Any]]:
-        files = self._read_all()
-        for f in files:
-            if f.get("id") == file_id:
-                return f
-        return None
+        with self._lock:
+            files = self._read_all_unlocked()
+            for f in files:
+                if f.get("id") == file_id:
+                    return f
+            return None
 
     def create_file(self, item: Dict[str, Any]) -> Dict[str, Any]:
-        files = self._read_all()
-        now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+07:00")
-        now_wib = time.strftime("%d %b %Y, %H:%M WIB")
+        with self._lock:
+            files = self._read_all_unlocked()
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+07:00")
+            now_wib = time.strftime("%d %b %Y, %H:%M WIB")
 
-        file_id = item.get("id") or f"doc-{int(time.time()*1000)}"
-        
-        # Clean up title if empty
-        title = item.get("title", "").strip()
-        if not title:
-            orig = item.get("original_audio_text", "").strip()
-            trans = item.get("translated_indonesian_text", "").strip()
-            source_txt = trans or orig
-            title = (source_txt[:60] + "...") if len(source_txt) > 60 else (source_txt or f"Dokumen Sesi {now_wib}")
+            file_id = item.get("id") or f"doc-{int(time.time()*1000)}"
+            
+            # Clean up title if empty
+            title = item.get("title", "").strip()
+            if not title:
+                orig = item.get("original_audio_text", "").strip()
+                trans = item.get("translated_indonesian_text", "").strip()
+                source_txt = trans or orig
+                title = (source_txt[:60] + "...") if len(source_txt) > 60 else (source_txt or f"Dokumen Sesi {now_wib}")
 
-        record = {
-            "id": file_id,
-            "title": title,
-            "timestamp": item.get("timestamp") or now_wib,
-            "speaker": item.get("speaker") or "Delegasi / Penanya",
-            "original_audio_text": item.get("original_audio_text", ""),
-            "detected_language": item.get("detected_language", "auto"),
-            "detected_language_name": item.get("detected_language_name", "Otomatis"),
-            "translated_indonesian_text": item.get("translated_indonesian_text", ""),
-            "ai_answers": item.get("ai_answers", {
-                "main_answer": "",
-                "concise_answer": "",
-                "brief_analysis": "",
-                "monitoring_issues": "",
-                "resolution_recommendations": "",
-                "kemenko_role": "",
-                "field_monitoring_agenda": "",
-                "latest_news": "",
-                "model_version": "GPT-4o & Gemini 1.5 Pro Hybrid"
-            }),
-            "chatgpt_answers": item.get("chatgpt_answers"),
-            "gemini_answers": item.get("gemini_answers"),
-            "selected_answer": item.get("selected_answer", ""),
-            "notes": item.get("notes", ""),
-            "created_at": item.get("created_at") or now_iso,
-            "updated_at": now_iso
-        }
+            record = {
+                "id": file_id,
+                "title": title,
+                "timestamp": item.get("timestamp") or now_wib,
+                "speaker": item.get("speaker") or "Delegasi / Penanya",
+                "original_audio_text": item.get("original_audio_text", ""),
+                "detected_language": item.get("detected_language", "auto"),
+                "detected_language_name": item.get("detected_language_name", "Otomatis"),
+                "translated_indonesian_text": item.get("translated_indonesian_text", ""),
+                "ai_answers": item.get("ai_answers", {
+                    "main_answer": "",
+                    "concise_answer": "",
+                    "brief_analysis": "",
+                    "monitoring_issues": "",
+                    "resolution_recommendations": "",
+                    "kemenko_role": "",
+                    "field_monitoring_agenda": "",
+                    "latest_news": "",
+                    "model_version": "GPT-4o & Gemini 1.5 Pro Hybrid"
+                }),
+                "chatgpt_answers": item.get("chatgpt_answers"),
+                "gemini_answers": item.get("gemini_answers"),
+                "selected_answer": item.get("selected_answer", ""),
+                "notes": item.get("notes", ""),
+                "created_at": item.get("created_at") or now_iso,
+                "updated_at": now_iso
+            }
 
-        # Check if exists, update or insert at front
-        existing_idx = next((i for i, f in enumerate(files) if f.get("id") == file_id), None)
-        if existing_idx is not None:
-            files[existing_idx] = record
-        else:
-            files.insert(0, record)
+            # Check if exists, update or insert at front
+            existing_idx = next((i for i, f in enumerate(files) if f.get("id") == file_id), None)
+            if existing_idx is not None:
+                files[existing_idx] = record
+            else:
+                files.insert(0, record)
 
-        self._write_all(files)
-        logger.info("Saved file recorded: %s (%s)", file_id, title)
-        return record
+            self._write_all_unlocked(files)
+            logger.info("Saved file recorded: %s (%s)", file_id, title)
+            return record
 
     def update_file(self, file_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        files = self._read_all()
-        for idx, f in enumerate(files):
-            if f.get("id") == file_id:
-                for k, v in updates.items():
-                    if k not in ("id", "created_at"):
-                        f[k] = v
-                f["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S+07:00")
-                files[idx] = f
-                self._write_all(files)
-                logger.info("Updated file: %s", file_id)
-                return f
-        return None
+        with self._lock:
+            files = self._read_all_unlocked()
+            for idx, f in enumerate(files):
+                if f.get("id") == file_id:
+                    for k, v in updates.items():
+                        if k not in ("id", "created_at"):
+                            f[k] = v
+                    f["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S+07:00")
+                    files[idx] = f
+                    self._write_all_unlocked(files)
+                    logger.info("Updated file: %s", file_id)
+                    return f
+            return None
 
     def delete_file(self, file_id: str) -> bool:
-        files = self._read_all()
-        initial_len = len(files)
-        files = [f for f in files if f.get("id") != file_id]
-        if len(files) < initial_len:
-            self._write_all(files)
-            logger.info("Deleted file: %s", file_id)
-            return True
-        return False
+        with self._lock:
+            files = self._read_all_unlocked()
+            initial_len = len(files)
+            files = [f for f in files if f.get("id") != file_id]
+            if len(files) < initial_len:
+                self._write_all_unlocked(files)
+                logger.info("Deleted file: %s", file_id)
+                return True
+            return False
 
 saved_file_service = SavedFileService()
 

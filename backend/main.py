@@ -56,13 +56,33 @@ app = FastAPI(
     version="2.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def add_security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+# Robust CORS Configuration:
+cors_origins = [o.strip() for o in settings.CORS_ORIGINS if o.strip()]
+if "*" in cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 @app.on_event("startup")
 async def validate_staging_and_production_security_invariants():
@@ -504,18 +524,28 @@ async def realtime_voice_session_endpoint(websocket: WebSocket):
     origin = websocket.headers.get("origin", "")
     if origin:
         origin_clean = origin.rstrip("/")
+        request_host = websocket.headers.get("host", "").strip()
+        is_same_origin = False
+        if request_host:
+            is_same_origin = (
+                origin_clean == f"http://{request_host}" or
+                origin_clean == f"https://{request_host}"
+            )
+
         if settings.ENV == "development":
-            allowed = any(
+            allowed = is_same_origin or any(
                 origin_clean == allowed_origin.rstrip("/") or
                 origin_clean.startswith("http://localhost:") or
                 origin_clean.startswith("http://127.0.0.1:")
                 for allowed_origin in settings.CORS_ORIGINS
             )
         else:
-            allowed = any(origin_clean == allowed_origin.rstrip("/") for allowed_origin in settings.CORS_ORIGINS)
+            allowed = is_same_origin or ("*" in settings.CORS_ORIGINS) or any(
+                origin_clean == allowed_origin.rstrip("/") for allowed_origin in settings.CORS_ORIGINS
+            )
 
         if not allowed:
-            logger.warning("WebSocket handshake rejected: unauthorized origin '%s' from client_ip=%s", origin, client_ip)
+            logger.warning("WebSocket handshake rejected: unauthorized origin '%s' (host: '%s') from client_ip=%s", origin, request_host, client_ip)
             handshake_tracker.record_failure(client_ip)
             await websocket.close(code=1008, reason="Origin not allowed")
             return
@@ -941,11 +971,27 @@ async def get_current_user(username: Optional[str] = None):
     return JSONResponse(content=user)
 
 @app.delete("/api/users/{username}")
-async def delete_user_account(username: str):
+async def delete_user_account(username: str, request: Request):
     """
     Attempts to delete user account.
     Superadmin and protected system accounts cannot be deleted.
+    Requires authenticated Superadmin or Admin authorization.
     """
+    auth_header = request.headers.get("authorization", "")
+    if settings.AUTH_ENABLED or settings.ENV in ("staging", "production"):
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Autentikasi Bearer token diperlukan untuk menghapus akun.")
+        token = auth_header[7:].strip()
+        try:
+            claims = verify_access_token(token)
+            caller_role = (claims.get("role") or "").lower()
+            if caller_role not in ("admin", "superadmin"):
+                raise HTTPException(status_code=403, detail="Akses ditolak: Hanya peran Admin atau Superadmin yang berhak menghapus akun.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Token otorisasi tidak valid: {str(e)}")
+
     success, msg = user_service.delete_user(username)
     if not success:
         raise HTTPException(status_code=400, detail=msg)

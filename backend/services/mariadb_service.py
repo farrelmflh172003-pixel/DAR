@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import Dict, List, Optional, Any
 from config import settings
@@ -11,6 +12,7 @@ class MariaDBService:
         self._init_database()
 
     def _get_connection(self):
+        # 1. Try mysql.connector first
         try:
             import mysql.connector
             return mysql.connector.connect(
@@ -19,26 +21,69 @@ class MariaDBService:
                 user=settings.MARIADB_USER,
                 password=settings.MARIADB_PASSWORD,
                 database=settings.MARIADB_DATABASE,
+                connection_timeout=3,
                 autocommit=True
             )
+        except ImportError:
+            pass
         except Exception as e:
-            logger.warning("MariaDB direct connection error: %s", e)
-            return None
+            logger.debug("mysql.connector failed: %s, trying pymysql fallback", e)
 
-    def _init_database(self):
-        """Ensures the MariaDB database and core tables exist."""
+        # 2. Try pymysql fallback
         try:
-            import mysql.connector
-            # Connect without database first to ensure database exists
-            conn = mysql.connector.connect(
+            import pymysql
+            return pymysql.connect(
                 host=settings.MARIADB_HOST,
                 port=settings.MARIADB_PORT,
                 user=settings.MARIADB_USER,
-                password=settings.MARIADB_PASSWORD
+                password=settings.MARIADB_PASSWORD,
+                database=settings.MARIADB_DATABASE,
+                connect_timeout=3,
+                autocommit=True,
+                cursorclass=pymysql.cursors.DictCursor
             )
+        except Exception as e:
+            logger.debug("MariaDB direct connection error: %s", e)
+            return None
+
+    def _init_database(self):
+        """Ensures the MariaDB database and core tables exist with connection timeout protection."""
+        conn = None
+        try:
+            # Validate database name to prevent injection
+            safe_db = re.sub(r'[^a-zA-Z0-9_]', '', settings.MARIADB_DATABASE) or "menkopolkam_ai_hub"
+
+            # Connect without database first to ensure database exists
+            try:
+                import mysql.connector
+                conn = mysql.connector.connect(
+                    host=settings.MARIADB_HOST,
+                    port=settings.MARIADB_PORT,
+                    user=settings.MARIADB_USER,
+                    password=settings.MARIADB_PASSWORD,
+                    connection_timeout=3
+                )
+            except Exception:
+                try:
+                    import pymysql
+                    conn = pymysql.connect(
+                        host=settings.MARIADB_HOST,
+                        port=settings.MARIADB_PORT,
+                        user=settings.MARIADB_USER,
+                        password=settings.MARIADB_PASSWORD,
+                        connect_timeout=3
+                    )
+                except Exception:
+                    conn = None
+
+            if not conn:
+                self._connected = False
+                logger.info("MariaDB server not reachable on %s:%s. Operating with resilient JSON file fallback.", settings.MARIADB_HOST, settings.MARIADB_PORT)
+                return
+
             cursor = conn.cursor()
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {settings.MARIADB_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-            cursor.execute(f"USE {settings.MARIADB_DATABASE}")
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{safe_db}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+            cursor.execute(f"USE `{safe_db}`")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -85,10 +130,15 @@ class MariaDBService:
             cursor.close()
             conn.close()
             self._connected = True
-            logger.info("MariaDB initialized successfully (database: %s)", settings.MARIADB_DATABASE)
+            logger.info("MariaDB initialized successfully (database: %s)", safe_db)
         except Exception as e:
-            logger.warning("MariaDB initialization warning: %s", e)
+            logger.info("MariaDB initialization notice: %s. Using resilient JSON storage fallback.", e)
             self._connected = False
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
         conn = self._get_connection()

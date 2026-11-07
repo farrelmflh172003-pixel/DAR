@@ -37,8 +37,12 @@ COPY backend/ ./backend/
 # Copy compiled frontend assets from Stage 1 into frontend/dist
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Ensure data directory exists
-RUN mkdir -p backend/data
+# Create non-root system user and configure permissions
+RUN useradd -u 10001 -m -s /bin/bash appuser && \
+    mkdir -p /app/backend/data && \
+    chown -R appuser:appuser /app
+
+USER appuser
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \

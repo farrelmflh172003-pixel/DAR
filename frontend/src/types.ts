@@ -42,6 +42,7 @@ export interface DiplomaticResponseSet {
   knowledge_applied?: boolean;
   attachment_name?: string;
   selected_answer?: string;
+  selected_answer_en?: string;
 }
 
 
@@ -106,6 +107,8 @@ export interface SavedFile {
     model_version?: string;
   };
   selected_answer?: string;
+  selected_answer_en?: string;
+  english_translations?: Record<string, string>;
   notes?: string;
   knowledge_applied?: boolean;
   attachment_name?: string;

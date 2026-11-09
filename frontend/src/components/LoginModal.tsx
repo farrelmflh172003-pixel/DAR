@@ -10,9 +10,12 @@ interface LoginModalProps {
 }
 
 const PRESET_ACCOUNTS = [
-  { username: 'admin', label: 'Admin', role: 'Admin', pass: 'admin' },
-  { username: 'superadmin', label: 'Superadmin', role: 'Superadmin', pass: 'superadmin' },
-  { username: 'viewer', label: 'Viewer', role: 'Viewer', pass: 'viewer' },
+  { username: 'jenderal.dudung', label: '🎖️ Jenderal Dudung', role: 'Menteri', pass: 'DudungVVIP2026!' },
+  { username: 'stafahli.geopolitik', label: '🌐 Staf Geopolitik', role: 'Admin', pass: 'Geopolitik2026!' },
+  { username: 'ajudan.adc1', label: '📱 Ajudan ADC 1', role: 'Menteri', pass: 'AjudanVVIP2026!' },
+  { username: 'notulis.utama', label: '📝 Notulis Utama', role: 'Admin', pass: 'Notulis2026!' },
+  { username: 'viewer.pemantau', label: '👁️ Viewer Pantau', role: 'Viewer', pass: 'Viewer2026!' },
+  { username: 'admin.sandi', label: '⚡ Admin Sandi', role: 'Superadmin', pass: 'SandiSistem2026!' },
 ];
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -118,27 +121,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         )}
 
         <div className="login-modal-grid">
-          {/* Sisi Kiri: Logo Besar Kemenkopolkam & Identitas Resmi */}
+          {/* Sisi Kiri: Logo Besar Dialogue AI Representative & Identitas Resmi */}
           <div className="login-branding-col">
             <div className="login-logo-wrapper">
               <img
-                src="/Kemenkopolkam.webp"
-                alt="Logo Resmi Kemenko Polkam RI"
+                src="/logo.png"
+                alt="Dialogue AI Representative Logo"
                 className="login-large-logo"
               />
             </div>
             <div className="login-branding-text">
-              <h2>KEMENTERIAN KOORDINATOR</h2>
-              <h3>BIDANG POLITIK DAN KEAMANAN</h3>
-              <p>REPUBLIK INDONESIA</p>
-              <div className="login-seal-badge">AI HUB STRATEGIS</div>
+              <h2>Dialogue AI Representative</h2>
+              <div className="login-seal-badge">AI REPRESENTATIVE</div>
             </div>
 
             {/* Informasi Hak Akses & Role Matrix */}
             <div className="login-role-matrix-guide">
               <div className="matrix-title">Matriks Otoritas Akun:</div>
               <ul className="matrix-list">
-                <li><strong>Admin</strong>: Administrator Operasional Diplomasi &amp; Kebijakan Polkam</li>
+                <li><strong>Admin</strong>: Administrator Operasional Dialogue AI Representative</li>
                 <li><strong>Superadmin</strong>: Akses penuh administrasi &amp; konfigurasi keamanan sistem</li>
                 <li><strong>Viewer</strong>: Pengamat &amp; Peninjau Dokumen Resmi (Mode Pantau)</li>
               </ul>

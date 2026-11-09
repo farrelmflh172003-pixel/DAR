@@ -1,0 +1,24 @@
+{
+  "short_name": "Dialogue AI",
+  "name": "Dialogue AI Representative",
+  "description": "Dialogue AI Representative - Multilingual real-time translation and response-assistance system",
+  "icons": [
+    {
+      "src": "/IMG_7710.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#070709",
+  "theme_color": "#070709",
+  "display": "standalone",
+  "orientation": "portrait"
+}
+

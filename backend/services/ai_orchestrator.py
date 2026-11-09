@@ -190,11 +190,24 @@ def detect_language_simple(text: str) -> str:
     """Helper alias returning only language code."""
     return detect_language_universal(text)[0]
 
+def is_likely_indonesian(text: str) -> bool:
+    if not text or not text.strip():
+        return False
+    lower = f" {text.lower()} "
+    id_markers = [
+        " yang ", " dan ", " di ", " dari ", " ini ", " untuk ", " pada ", " adalah ",
+        " dengan ", " secara ", " oleh ", " berdasarkan ", " kemenangan ", " mencetak ",
+        " perpanjangan ", " waktu ", " terkini ", " terupdate ", " pemantauan ", " laporan ",
+        " hasil ", " rekomendasi ", " kementerian ", " kebijakan ", " babak "
+    ]
+    matches = sum(1 for m in id_markers if m in lower)
+    return matches >= 2
+
 async def translate_text_universal(text: str, target_lang: str = "id", source_lang: Optional[str] = "auto") -> str:
     """
     Translates any input text into target_lang from source_lang while strictly preserving markdown rich text.
     Supports all diplomatic languages: id, en, ar, zh, fr, de, ja, ru, es, ko, nl, etc.
-    Uses Gemini Flash Lite with instant response (~0.5s).
+    Uses Gemini Flash Lite / Flash Preview with instant response (~0.5s) and OpenAI fallback.
     """
     clean = text.strip()
     if not clean:
@@ -226,12 +239,13 @@ async def translate_text_universal(text: str, target_lang: str = "id", source_la
     gemini_key = settings.GEMINI_API_KEY
 
     if gemini_key:
-        prompt = f"""You are an elite diplomatic statecraft and intelligence translator for Menkopolkam RI.
+        prompt = f"""You are an elite diplomatic statecraft and intelligence translator for Dialogue AI Representative.
 Translate the following text {src_phrase}accurately, completely, and naturally into {target_name}.
 CRITICAL INSTRUCTIONS:
 1. Preserve all Markdown formatting intact (such as **bold**, *italic*, headers, bullet points, numbered lists, line breaks).
 2. Do not omit any facts, figures, or proper nouns.
 3. Output ONLY the translated text. Do not add any introductory or concluding meta-remarks.
+4. If target is English, output MUST BE 100% IN ENGLISH, NEVER Indonesian.
 
 TEXT TO TRANSLATE:
 {clean}"""
@@ -239,10 +253,10 @@ TEXT TO TRANSLATE:
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "maxOutputTokens": 4096,
-                "temperature": 0.25
+                "temperature": 0.2
             }
         }
-        models_to_try = ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-flash-latest"]
+        models_to_try = ["gemini-3.5-flash-lite", "gemini-3-flash-preview"]
         async with httpx.AsyncClient(timeout=15.0) as client:
             for m_name in models_to_try:
                 target_url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={gemini_key}"
@@ -251,9 +265,37 @@ TEXT TO TRANSLATE:
                     if r.status_code == 200:
                         res_json = r.json()
                         translated = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        return translated
+                        if tgt_code == "en" and is_likely_indonesian(translated):
+                            continue
+                        if translated:
+                            return translated
                 except Exception:
                     continue
+
+    # OpenAI Fallback
+    openai_key = settings.OPENAI_API_KEY
+    if openai_key and tgt_code == "en":
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                r = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {"role": "system", "content": "You are a professional diplomatic translator. Translate the text into fluent, professional English. Output ONLY the translated text. Never output Indonesian."},
+                            {"role": "user", "content": clean}
+                        ],
+                        "temperature": 0.2
+                    }
+                )
+                if r.status_code == 200:
+                    res_json = r.json()
+                    translated = res_json["choices"][0]["message"]["content"].strip()
+                    if translated and not is_likely_indonesian(translated):
+                        return translated
+        except Exception:
+            pass
 
     return clean
 
@@ -310,7 +352,7 @@ def generate_direct_fallback(
         sources_points = "\n".join([f"- **Perkembangan Terpantau**: {s}" for s in live_sources[:4]])
     else:
         sources_points = (
-            f"- **Pemantauan Terpadu**: Kemenko Polkam RI secara aktif memantau dinamika terkait '{clean_q}'.\n"
+            f"- **Pemantauan Terpadu**: Dialogue AI Representative secara aktif memantau dinamika terkait '{clean_q}'.\n"
             f"- **Koordinasi Lintas Sektor**: Menyelaraskan langkah kementerian teknis dan lembaga penegak hukum terkait."
         )
 
@@ -346,10 +388,10 @@ def generate_direct_fallback(
         f"1. Akselerasi debottlenecking hambatan operasional penanganan '{clean_q}'.\n2. Penyelarasan SOP taktis dan penguatan respons cepat instansi teknis terkait."
     )
     chatgpt_kemenko_role = (
-        f"Menko Polkam memimpin koordinasi lintas K/L terkait, mengawal kepatuhan instruksi Presiden, dan memastikan tidak ada hambatan birokrasi dalam implementasi kebijakan."
+        f"Kemenkopolkam memimpin koordinasi lintas instansi terkait, mengawal kepatuhan arahan strategis, dan memastikan integrasi implementasi kebijakan."
     )
     chatgpt_field_monitoring_agenda = (
-        f"1. Pelaksanaan rapat koordinasi terpadu bersama pimpinan K/L terkait.\n2. Peninjauan lapangan dan verifikasi faktual di lokasi prioritas dalam waktu 72 jam."
+        f"1. Pelaksanaan rapat koordinasi terpadu bersama pimpinan kementerian/lembaga terkait.\n2. Peninjauan lapangan dan verifikasi faktual di lokasi prioritas dalam waktu 72 jam."
     )
 
     gemini_monitoring_issues = (
@@ -359,10 +401,10 @@ def generate_direct_fallback(
         f"1. Formulasi kebijakan antisipatif jangka menengah dan panjang terhadap '{clean_q}'.\n2. Konsolidasi kepemimpinan strategis nasional dan diplomasi preventif terukur."
     )
     gemini_kemenko_role = (
-        f"Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis kenegaraan, menyatukan postur aparat penegak hukum dan pertahanan-keamanan nasional."
+        f"Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis Kemenkopolkam, menyatukan postur aparat penegak hukum dan pertahanan-keamanan nasional."
     )
     gemini_field_monitoring_agenda = (
-        f"1. Aktivasi desk pemantauan terpadu 24/7 di bawah Deputi terkait Kemenko Polkam.\n2. Agenda peninjauan lapangan berkala dan evaluasi dampak komprehensif bersama Forkopimda."
+        f"1. Aktivasi desk pemantauan terpadu 24/7 di bawah Dialogue AI Representative.\n2. Agenda peninjauan lapangan berkala dan evaluasi dampak komprehensif bersama Forkopimda."
     )
 
     chatgpt_latest_news = (
@@ -377,12 +419,25 @@ def generate_direct_fallback(
     )
 
     en_trans = {
+        "card_1": clean_q,
+        "card_2": clean_q,
         "card_3": f"Operational analysis of the latest dynamics regarding **{clean_q}**:\n\n- **Real-Time Intelligence**: Monitoring ongoing developments across governmental channels.\n- **Operational Execution**: Removing procedural bottlenecks and aligning inter-agency protocols.",
         "card_4": f"Real-time operational monitoring of '{clean_q}', ensuring inter-ministerial synergy and streamlined execution.",
         "card_5": "Operational risk calculations prioritize data-backed responsiveness and active mitigation of policy bottlenecks.",
         "card_8": f"Strategic governance and national security review on **{clean_q}**:\n\n- **Governance Architecture**: Aligning national policies with sovereignty and stability priorities.\n- **Political-Security Resilience**: Safeguarding institutional legitimacy and social cohesion.",
         "card_9": f"Strategic assessment ensuring governance certainty and political-security stability regarding '{clean_q}'.",
-        "card_10": "Long-term impact analysis affirms that integrating political stability and rule of law is crucial for enduring national resilience."
+        "card_10": "Long-term impact analysis affirms that integrating political stability and rule of law is crucial for enduring national resilience.",
+        "card_12": f"Field intelligence monitoring identifies key operational flashpoints and policy friction related to '{clean_q}'.",
+        "card_13": f"1. Streamline cross-agency coordination regarding '{clean_q}'.\n2. Establish dedicated rapid-response verification teams.",
+        "card_14": "Exercising inter-ministerial coordination and policy synchronization across law enforcement and security bodies.",
+        "card_15": "1. Convene high-level inter-ministerial coordination.\n2. On-site technical assessment within 72 hours.",
+        "card_16": f"Strategic stability review and national intelligence assessment on '{clean_q}'.",
+        "card_17": f"1. Formulate comprehensive medium-to-long term response policies regarding '{clean_q}'.\n2. Consolidate national leadership and diplomatic de-escalation.",
+        "card_18": "Safeguarding constitutional authority and unifying domestic legal posture with external security commitments.",
+        "card_19": "1. Activate 24/7 joint monitoring task force.\n2. Conduct scheduled regional ground inspections with local authorities.",
+        "card_20": f"Verified News & Updates on '{clean_q}': Monitoring official dispatches and national media reports.",
+        "card_21": f"Comprehensive Media Digest & Field Updates: Official government statements and verified news releases on '{clean_q}'.",
+        "card_11": f"Strategic diplomatic assessment and verified executive brief regarding **{clean_q}**."
     }
 
     chatgpt_bundle = AIAnswerBundle(
@@ -495,7 +550,8 @@ async def fetch_live_web_context(query: str, detected_lang: str = "id", limit: i
         "manchester", "roma", "madrid", "barcelona", "arsenal", "chelsea", "liverpool", "bayern",
         "juventus", "milan", "psg", "liga", "champions", "premier league", "serie a", "la liga",
         "nba", "f1", "motogp", "spacex", "apple", "tesla", "microsoft", "google", "bitcoin", "crypto",
-        "ukraina", "rusia", "israel", "gaza", "palestina", "iran", "amerika", "china", "taiwan"
+        "ukraina", "rusia", "israel", "gaza", "palestina", "iran", "amerika", "china", "taiwan",
+        "avengers", "marvel", "disney", "film", "movie", "piala dunia", "world cup", "fifa", "sepak bola"
     ])
     if not is_global_topic and not any(k in keywords.lower() for k in ["menko", "polkam", "indonesia", "pemerintah", "kabinet"]):
         search_term = f"{keywords} Indonesia"
@@ -530,19 +586,19 @@ async def process_live_question_fast(
     if is_mic_check_or_greeting(clean_q):
         trans_id = "Tes, tes (Uji coba mikrofon)" if any(w in clean_q.lower() for w in ["test", "tes", "cek", "check"]) else "Halo, salam (Uji coba sistem)"
         cg_bundle = AIAnswerBundle(
-            main_answer="Koneksi audio dan transmisi suara terdeteksi optimal. Seluruh modul analitis Menkopolkam AI Hub berada dalam status aktif dan siap menerima pertanyaan diplomasi, pertahanan, atau kebijakan nasional Anda.",
+            main_answer="Koneksi audio dan transmisi suara terdeteksi optimal. Seluruh modul analitis Dialogue AI Representative berada dalam status aktif dan siap menerima pertanyaan diplomasi, pertahanan, atau kebijakan strategis Anda.",
             concise_answer="Sistem audio dan AI aktif, siap menerima pertanyaan Anda.",
             brief_analysis="Jalur komunikasi dan latensi sistem berada dalam parameter normal untuk mendukung percakapan real-time.",
             model_version="ChatGPT"
         )
         gem_bundle = AIAnswerBundle(
-            main_answer="Sinyal suara diterima dengan jelas. Sistem kecerdasan buatan Menkopolkam dalam posisi siaga penuh untuk memberikan analisis strategis kenegaraan.",
+            main_answer="Sinyal suara diterima dengan jelas. Sistem kecerdasan buatan Dialogue AI Representative dalam posisi siaga penuh untuk memberikan analisis strategis kenegaraan.",
             concise_answer="Koneksi stabil dan terverifikasi. Silakan ajukan pertanyaan Anda.",
             brief_analysis="Verifikasi sistem operasional selesai. Seluruh modul analisis siap memproses instruksi kebijakan.",
             model_version="Gemini"
         )
         en_trans = {
-            "card_3": "Audio connection verified. All Menkopolkam AI Hub analytical modules are active and ready for your inquiries.",
+            "card_3": "Audio connection verified. All Dialogue AI Representative analytical modules are active and ready for your inquiries.",
             "card_4": "Audio and AI systems operational and ready.",
             "card_5": "Communication latency and audio clarity verified within optimal parameters.",
             "card_8": "Clear audio signal received. The AI statecraft system stands ready to assist with strategic policy inquiries.",
@@ -585,7 +641,7 @@ ATURAN PENGGUNAAN KNOWLEDGE TAMBAHAN (RELEVANCE RULE):
     gemini_key = settings.GEMINI_API_KEY
     if gemini_key:
         try:
-            prompt = f"""Anda adalah asisten kecerdasan buatan serbaguna berstandar tinggi yang memberikan jawaban paling faktual, akurat, dan mendalam untuk Kemenko Polkam RI.
+            prompt = f"""Anda adalah asisten kecerdasan buatan serbaguna berstandar tinggi yang memberikan jawaban paling faktual, akurat, dan mendalam untuk Dialogue AI Representative.
 TANGGAL SISTEM TERKINI: {now_date_str}.
 {knowledge_section}
 SUMBER DATA & BERITA TERKINI (REAL-TIME DATA MONITORING):
@@ -596,8 +652,9 @@ PERTANYAAN / TOPIK DARI PENGGUNA:
 BAHASA SUMBER: {detected_name} (Kode: {detected_lang})
 
 PANDUAN MENJAWAB:
-1. WAJIB PRIORITASKAN DATA PALING MUTAKHIR & FAKTUAL:
-   - Jika pertanyaan berkaitan dengan pertandingan olahraga, laga sepak bola, skor, peristiwa, atau perkembangan terkini: SEBUTKAN SECARA SPESIFIK hasil akhir pertandingan, skor laga terbaru, tanggal pertandingan, pencetak gol, atau peristiwa paling mutakhir yang terjadi berdasarkan data berita terkini di atas!
+1. WAJIB PRIORITASKAN DATA PALING MUTAKHIR & FAKTUAL (DENGAN INTEGRITAS TEMPORAL):
+   - Jika pertanyaan berkaitan dengan pertandingan olahraga, laga sepak bola, skor, peristiwa, atau perkembangan terkini: SEBUTKAN SECARA SPESIFIK hasil akhir pertandingan, skor laga terbaru, tanggal pertandingan, pencetak gol, atau peristiwa paling mutakhir yang BENAR-BENAR TERJADI berdasarkan data berita terkini di atas!
+   - INTEGRITAS TEMPORAL & ANTI-HALUSINASI MASA DEPAN: Untuk agenda, turnamen, atau peristiwa yang BELUM berlangsung atau BELUM selesai secara resmi (misalnya turnamen olahraga yang belum selesai, pemilu masa depan, tanggal rilis film yang belum dipublikasikan resmi): WAJIB nyatakan secara jujur dan faktual bahwa peristiwa tersebut belum terjadi / belum selesai. DILARANG KERAS mengarang skor palsu, pencetak gol fiktif, atau pemenang rekaan untuk peristiwa masa depan! Jika ada artikel simulasi AI, prediksi, atau ramalan di web/berita, tegaskan bahwa itu adalah prediksi/simulasi, BUKAN hasil resmi nyata.
    - DILARANG HANYA MEMBERIKAN TEORI UMUM, KATA-KATA KLISE, ATAU RETORIKA ABSTRAK JIKA DATA FAKTUAL TERBARU TERSEDIA.
    - Jawablah secara konkret dan to-the-point sesuai topik yang ditanyakan (jika sepak bola, bahas hasil laganya; jika politik, bahas kebijakan riilnya).
 2. PENANGANAN BAHASA & TERJEMAHAN 100% PRESISI (FIELD "translation_id"):
@@ -609,7 +666,10 @@ PANDUAN MENJAWAB:
 4. DUA PERSPEKTIF RESPON:
    - CHATGPT: Fokus pada fakta langsung, skor/hasil terkini, kronologi ringkas, dan aspek performa nyata.
    - GEMINI: Ulasan komprehensif mendalam, implikasi strategis ke depan, dan konteks analisis mutakhir.
-5. FORMAT JSON KELUARAN:
+5. ATURAN WAJIB BAHASA INGGRIS ("en_card_..."):
+   - SEMUA field yang berawalan "en_card_" (en_card_1 s/d en_card_21) WAJIB DITULIS 100% DALAM BAHASA INGGRIS PROFESIONAL & FASIH (FLUENT DIPLOMATIC ENGLISH).
+   - DILARANG KERAS MENULIS DALAM BAHASA INDONESIA PADA FIELD "en_card_..." MANAPUN! Jika pertanyaan atau berita aslinya bahasa Indonesia, terjemahkan intinya ke bahasa Inggris.
+6. FORMAT JSON KELUARAN:
    - Keluarkan HANYA format JSON valid persis seperti ini:
 {{
   "detected_language": "{detected_lang}",
@@ -619,9 +679,9 @@ PANDUAN MENJAWAB:
   "chatgpt_main": "Jawaban terstruktur alami faktual terkini khas ChatGPT (format Markdown)",
   "chatgpt_concise": "Ringkasan lugas 1-2 kalimat langsung ke skor/inti fakta terbaru",
   "chatgpt_analysis": "Ulasan kritis performa dan eksekusi nyata",
-  "chatgpt_monitoring_issues": "Fakta lapangan, akar masalah politik-hukum-keamanan, dan hasil pantauan data",
+  "chatgpt_monitoring_issues": "Fakta lapangan, akar masalah dan hasil pantauan data",
   "chatgpt_resolution_recommendations": "Rekomendasi taktis, regulatif, dan langkah penyelesaian konkret",
-  "chatgpt_kemenko_role": "Peran koordinasi, sinkronisasi, dan pengendalian (KSP) Kemenko Polkam",
+  "chatgpt_kemenko_role": "Peran koordinasi dan kepemimpinan Kemenkopolkam",
   "chatgpt_field_monitoring_agenda": "Rencana agenda tinjauan lapangan langsung dan verifikasi faktual",
   "chatgpt_latest_news": "Liputan berita teraktual, pernyataan resmi terkini, dan dinamika media massa khas ChatGPT",
   "gemini_main": "Jawaban komprehensif alami berbasis data terupdate khas Gemini (format Markdown)",
@@ -629,23 +689,35 @@ PANDUAN MENJAWAB:
   "gemini_analysis": "Ulasan berbobot mengenai implikasi strategis ke depan",
   "gemini_monitoring_issues": "Analisis komprehensif isu pemantauan dan potensi kerentanan stabilitas",
   "gemini_resolution_recommendations": "Rekomendasi strategis multi-sektor dan mitigasi risiko jangka panjang",
-  "gemini_kemenko_role": "Fungsi pengawalan kebijakan strategis dan kepemimpinan Menko Polkam",
+  "gemini_kemenko_role": "Fungsi pengawalan kebijakan strategis Kemenkopolkam",
   "gemini_field_monitoring_agenda": "Agenda aksi pemantauan terpadu di wilayah prioritas",
   "gemini_latest_news": "Kompilasi berita media terverifikasi, konteks siaran pers, dan data faktual mutakhir khas Gemini",
+  "en_card_1": "English version of question",
+  "en_card_2": "English version of question",
   "en_card_3": "Factual, articulate English response in ChatGPT style",
   "en_card_4": "Concise English executive summary with latest score/event",
   "en_card_5": "English tactical performance review",
+  "en_card_12": "English monitoring issues and field friction",
+  "en_card_13": "English concrete actionable recommendations",
+  "en_card_14": "English role of Kemenkopolkam",
+  "en_card_15": "English field monitoring agenda",
+  "en_card_20": "Concise English translation of ChatGPT verified latest news",
   "en_card_8": "Comprehensive, articulate English response in Gemini style",
   "en_card_9": "Concise English strategic takeaway with latest facts",
-  "en_card_10": "English strategic implications analysis"
+  "en_card_10": "English strategic implications analysis",
+  "en_card_16": "English stability and intelligence monitoring issues",
+  "en_card_17": "English strategic resolution recommendations",
+  "en_card_18": "English strategic role of Kemenkopolkam",
+  "en_card_19": "English priority area field action agenda",
+  "en_card_21": "Concise English translation of Gemini verified latest news"
 }}"""
-            models_to_try = ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-flash-latest"]
+            models_to_try = ["gemini-3.5-flash-lite", "gemini-3-flash-preview"]
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
                     "response_mime_type": "application/json",
-                    "maxOutputTokens": 3500,
-                    "temperature": 0.55
+                    "maxOutputTokens": 3800,
+                    "temperature": 0.45
                 }
             }
             async with httpx.AsyncClient(timeout=25.0) as client:
@@ -693,13 +765,36 @@ PANDUAN MENJAWAB:
                         model_version="Gemini (Gemini Flash Live Grounded)"
                     )
                     en_trans = {
+                        "card_1": clean_q if (verified_lang == "en") else (data.get("en_card_1") or clean_q),
+                        "card_2": clean_q if (verified_lang == "en") else (data.get("en_card_2") or clean_q),
                         "card_3": data.get("en_card_3", fallback_en["card_3"]),
                         "card_4": data.get("en_card_4", fallback_en["card_4"]),
                         "card_5": data.get("en_card_5", fallback_en["card_5"]),
                         "card_8": data.get("en_card_8", fallback_en["card_8"]),
                         "card_9": data.get("en_card_9", fallback_en["card_9"]),
                         "card_10": data.get("en_card_10", fallback_en["card_10"]),
+                        "card_12": data.get("en_card_12", fallback_en.get("card_12", "")),
+                        "card_13": data.get("en_card_13", fallback_en.get("card_13", "")),
+                        "card_14": data.get("en_card_14", fallback_en.get("card_14", "")),
+                        "card_15": data.get("en_card_15", fallback_en.get("card_15", "")),
+                        "card_16": data.get("en_card_16", fallback_en.get("card_16", "")),
+                        "card_17": data.get("en_card_17", fallback_en.get("card_17", "")),
+                        "card_18": data.get("en_card_18", fallback_en.get("card_18", "")),
+                        "card_19": data.get("en_card_19", fallback_en.get("card_19", "")),
+                        "card_20": (data.get("en_card_20") or "").strip() or fallback_en.get("card_20", ""),
+                        "card_21": (data.get("en_card_21") or "").strip() or fallback_en.get("card_21", ""),
                     }
+
+                    # Rigorous English Validation: Ensure NO card translation is mistakenly left in Indonesian
+                    for k, val in list(en_trans.items()):
+                        if val and is_likely_indonesian(val):
+                            clean_trans = await translate_text_universal(val, target_lang="en", source_lang="id")
+                            if clean_trans and not is_likely_indonesian(clean_trans):
+                                en_trans[k] = clean_trans
+                            elif k in fallback_en:
+                                en_trans[k] = fallback_en[k]
+
+                    en_trans["card_11"] = en_trans.get("card_3") or en_trans.get("card_8") or ""
                     final_trans_id = (data.get("translation_id") or "").strip()
                     if not final_trans_id or (verified_lang != "id" and final_trans_id.lower() == clean_q.lower()):
                         final_trans_id = fallback_trans_id
@@ -747,12 +842,14 @@ def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 24000, channels: int = 1, bi
     )
     return header + pcm_bytes
 
-async def generate_gemini_tts(text: str, voice_name: str = "Kore") -> Optional[bytes]:
+async def generate_gemini_tts(text: str, voice_name: str = "Aoede") -> Optional[bytes]:
     key = settings.GEMINI_API_KEY
     if not key or not text or not text.strip():
         return None
     
-    tts_model = settings.GEMINI_TTS_MODEL or "gemini-3.8-flash-lite-tts"
+    import base64
+    from utils.audio_parser import parse_audio_payload
+    
     payload = {
         "contents": [{"parts": [{"text": text.strip()}]}],
         "generationConfig": {
@@ -766,22 +863,33 @@ async def generate_gemini_tts(text: str, voice_name: str = "Kore") -> Optional[b
             }
         }
     }
-    import base64
-    from utils.audio_parser import parse_audio_payload
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{tts_model}:generateContent"
+    
+    tts_models_to_try = [
+        "gemini-2.5-flash-preview-tts",
+        "gemini-3.1-flash-tts-preview",
+        "gemini-3.8-flash-tts",
+        settings.GEMINI_TTS_MODEL or "gemini-3.8-flash-lite-tts"
+    ]
+    models = []
+    for m in tts_models_to_try:
+        if m and m not in models:
+            models.append(m)
+
     headers = {"x-goog-api-key": key}
     async with httpx.AsyncClient(timeout=8.0) as client:
-        try:
-            res = await client.post(url, headers=headers, json=payload)
-            if res.status_code == 200:
-                data = res.json()
-                b64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
-                mime = data["candidates"][0]["content"]["parts"][0]["inlineData"].get("mimeType", "")
-                raw_bytes = base64.b64decode(b64)
-                pcm, _meta = parse_audio_payload(raw_bytes, mime_type=mime, expected_sample_rate=24000)
-                if pcm:
-                    return pcm_to_wav(pcm, 24000)
-        except Exception:
-            pass
+        for tts_model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{tts_model}:generateContent"
+            try:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    b64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+                    mime = data["candidates"][0]["content"]["parts"][0]["inlineData"].get("mimeType", "")
+                    raw_bytes = base64.b64decode(b64)
+                    pcm, _meta = parse_audio_payload(raw_bytes, mime_type=mime, expected_sample_rate=24000)
+                    if pcm:
+                        return pcm_to_wav(pcm, 24000)
+            except Exception:
+                continue
     return None
 

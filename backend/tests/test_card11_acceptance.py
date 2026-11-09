@@ -14,6 +14,17 @@ client = TestClient(app)
 
 def test_api_saved_files_ordering_newest_first():
     """Verify GET /api/saved-files returns items sorted strictly newest-first."""
+    if len(saved_file_service.list_files()) < 2:
+        saved_file_service.create_file({
+            "id": "test-order-seed-1",
+            "title": "Dokumen Uji Urutan 1",
+            "created_at": "2026-01-01T10:00:00+07:00"
+        })
+        saved_file_service.create_file({
+            "id": "test-order-seed-2",
+            "title": "Dokumen Uji Urutan 2",
+            "created_at": "2026-01-02T10:00:00+07:00"
+        })
     files = saved_file_service.list_files(sort_order="newest_first")
     assert len(files) >= 2, "Need at least 2 files to verify ordering"
     

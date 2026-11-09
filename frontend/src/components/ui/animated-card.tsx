@@ -213,6 +213,7 @@ export const HubAnimatedCard = ({
       >
         {/* Header bar */}
         <div
+          className="hub-card-header-bar"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -224,7 +225,7 @@ export const HubAnimatedCard = ({
             transition: 'padding-right 0.15s ease',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="hub-card-title-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span
               style={{
                 fontSize: '12px',
@@ -238,7 +239,7 @@ export const HubAnimatedCard = ({
             </span>
             {badge}
           </div>
-          {headerAction && <div>{headerAction}</div>}
+          {headerAction && <div className="hub-card-header-action">{headerAction}</div>}
         </div>
 
         {/* Content body: HIGH CONTRAST BLACK TEXT */}

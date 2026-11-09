@@ -87,12 +87,12 @@ class OpenAIRealtimeProvider(BaseRealtimeProvider):
         self._receive_task: Optional[asyncio.Task] = None
         self._resampler = StatefulAudioResampler()
         self._is_cancelled = False
-        self.voice = "alloy"
+        self.voice = "nova"
         self.system_instruction = ""
 
-    async def connect(self, system_instruction: str = "", voice: str = "alloy") -> bool:
+    async def connect(self, system_instruction: str = "", voice: str = "nova") -> bool:
         self.system_instruction = system_instruction
-        self.voice = voice or "alloy"
+        self.voice = voice or "nova"
         self._is_cancelled = False
         self.set_status("connecting", "Initializing connection to OpenAI Realtime GA...")
 

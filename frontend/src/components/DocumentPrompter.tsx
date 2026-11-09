@@ -26,6 +26,7 @@ interface DocumentPrompterProps {
   onSendToAi?: (text: string) => void;
   injectedDoc?: QueueDocumentItem | null;
   onInjectedDocHandled?: () => void;
+  currentUser?: { role?: string; username?: string } | null;
 }
 
 export interface QueueDocumentItem {
@@ -38,6 +39,8 @@ export interface QueueDocumentItem {
   pageCount: number;
   durationStr: string;
   fileType: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const SPEED_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -45,9 +48,12 @@ const SPEED_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 7, 8, 9
 export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({ 
   onSendToAi,
   injectedDoc,
-  onInjectedDocHandled
+  onInjectedDocHandled,
+  currentUser
 }) => {
-  // Document Queue State (Capacity up to 10 files - starts empty from 0)
+  const isViewer = currentUser?.role === 'Viewer';
+
+  // Document Queue State (Capacity up to 10 files - loaded from database)
   const [queue, setQueue] = useState<QueueDocumentItem[]>([]);
   const [activeDocId, setActiveDocId] = useState<string>('');
   const [isDeckOpen, setIsDeckOpen] = useState<boolean>(true);
@@ -117,20 +123,81 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
     setUploadSuccess(`Menampilkan dokumen: "${item.filename}"`);
   }, []);
 
+  // Load persistent queue from backend database on mount & refresh
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchQueue = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/prompter/queue`);
+        if (res.ok) {
+          const items: QueueDocumentItem[] = await res.json();
+          if (!isCancelled && Array.isArray(items) && items.length > 0) {
+            setQueue(items);
+            handleSelectQueueItem(items[0]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load persistent prompter queue:', err);
+      }
+    };
+    fetchQueue();
+    return () => { isCancelled = true; };
+  }, [handleSelectQueueItem]);
+
+  // Persist single document to backend database with RBAC header
+  const persistDocToBackend = async (item: QueueDocumentItem): Promise<QueueDocumentItem> => {
+    const token = localStorage.getItem('menkopolkam_jwt_token');
+    const res = await fetch(`${API_BASE_URL}/api/prompter/queue`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(item)
+    });
+    if (!res.ok) {
+      if (res.status === 403) {
+        throw new Error("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan menambahkan dokumen.");
+      }
+      throw new Error("Gagal menyimpan dokumen ke database server.");
+    }
+    return res.json();
+  };
+
   // Handle external/injected document upload (e.g. from Saved Files / List Pertanyaan)
   useEffect(() => {
     if (injectedDoc) {
-      setQueue((prev) => {
-        const exists = prev.some((d) => d.id === injectedDoc.id);
-        if (exists) return prev;
-        return [...prev, injectedDoc];
-      });
-      handleSelectQueueItem(injectedDoc);
-      setActiveTab('prompter');
-      setUploadSuccess(`Naskah "${injectedDoc.filename}" berhasil dimuat ke Prompter.`);
-      onInjectedDocHandled?.();
+      if (isViewer) {
+        alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan menambahkan dokumen ke antrean prompter.");
+        onInjectedDocHandled?.();
+        return;
+      }
+      persistDocToBackend(injectedDoc)
+        .then((savedItem) => {
+          setQueue((prev) => {
+            const exists = prev.some((d) => d.id === savedItem.id);
+            if (exists) return prev.map((d) => (d.id === savedItem.id ? savedItem : d));
+            return [...prev, savedItem];
+          });
+          handleSelectQueueItem(savedItem);
+          setActiveTab('prompter');
+          setUploadSuccess(`Naskah "${savedItem.filename}" tersimpan di database Prompter.`);
+        })
+        .catch((err) => {
+          console.error('Failed to persist injected doc to backend:', err);
+          setQueue((prev) => {
+            const exists = prev.some((d) => d.id === injectedDoc.id);
+            if (exists) return prev;
+            return [...prev, injectedDoc];
+          });
+          handleSelectQueueItem(injectedDoc);
+          setActiveTab('prompter');
+        })
+        .finally(() => {
+          onInjectedDocHandled?.();
+        });
     }
-  }, [injectedDoc, handleSelectQueueItem, onInjectedDocHandled]);
+  }, [injectedDoc, handleSelectQueueItem, onInjectedDocHandled, isViewer]);
 
   // Previous & Next Document Navigation
   const currentDocIndex = queue.findIndex((item) => item.id === activeDocId);
@@ -154,8 +221,28 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
   const handleResetZoom = () => setZoomLevel(100);
 
   // Delete document from queue (can be deleted down to 0)
-  const handleDeleteQueueItem = (idToDelete: string, e?: React.MouseEvent) => {
+  const handleDeleteQueueItem = async (idToDelete: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (isViewer) {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak pantau (Read-Only). Anda tidak diizinkan menghapus dokumen dari antrean prompter.");
+      return;
+    }
+    const token = localStorage.getItem('menkopolkam_jwt_token');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/prompter/queue/${idToDelete}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.status === 403) {
+        alert("Akses Ditolak: Peran Pengamat (Viewer) tidak diizinkan menghapus dokumen dari database prompter.");
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to delete prompter document on backend:", err);
+    }
+
     setQueue((prevQueue) => {
       const updatedQueue = prevQueue.filter((item) => item.id !== idToDelete);
 
@@ -175,17 +262,19 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
       }
       return updatedQueue;
     });
-    setUploadSuccess("Dokumen berhasil dihapus dari antrean.");
+    setUploadSuccess("Dokumen berhasil dihapus dari database antrean.");
   };
 
   // Drag and Drop reordering within queue
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (isViewer) return;
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
   };
 
   const handleDragOverItem = (e: React.DragEvent, index: number) => {
+    if (isViewer) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (dragOverIndex !== index) {
@@ -197,18 +286,32 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
+    if (isViewer) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
     if (draggedIndex === null || draggedIndex === targetIndex) {
       setDraggedIndex(null);
       setDragOverIndex(null);
       return;
     }
 
-    setQueue((prevQueue) => {
-      const updated = [...prevQueue];
-      const [movedItem] = updated.splice(draggedIndex, 1);
-      updated.splice(targetIndex, 0, movedItem);
-      return updated;
-    });
+    const updated = [...queue];
+    const [movedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, movedItem);
+    setQueue(updated);
+
+    const token = localStorage.getItem('menkopolkam_jwt_token');
+    fetch(`${API_BASE_URL}/api/prompter/queue/reorder`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ ids: updated.map(it => it.id) })
+    }).catch(() => {});
 
     setDraggedIndex(null);
     setDragOverIndex(null);
@@ -218,6 +321,11 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
   const handleFileUpload = async (file: File) => {
     setUploadError(null);
     setUploadSuccess(null);
+
+    if (isViewer) {
+      setUploadError("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengunggah dokumen baru.");
+      return;
+    }
 
     // Limit check: 10 files max
     if (queue.length >= 10) {
@@ -251,14 +359,15 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
           fileType: cleanExt
         };
 
-        setQueue((prev) => [...prev, newItem]);
-        handleSelectQueueItem(newItem);
-        setUploadSuccess(`File "${file.name}" ditambahkan ke antrean (${queue.length + 1}/10).`);
+        const saved = await persistDocToBackend(newItem);
+        setQueue((prev) => [...prev, saved]);
+        handleSelectQueueItem(saved);
+        setUploadSuccess(`File "${file.name}" ditambahkan ke antrean & tersimpan di database (${queue.length + 1}/10).`);
         setActiveTab('prompter');
         setIsLoadingFile(false);
         return;
-      } catch (err) {
-        setUploadError(`Gagal membaca file teks: ${String(err)}`);
+      } catch (err: any) {
+        setUploadError(`Gagal memproses file teks: ${err.message || String(err)}`);
         setIsLoadingFile(false);
         return;
       }
@@ -298,9 +407,10 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
         fileType: cleanExt
       };
 
-      setQueue((prev) => [...prev, newItem]);
-      handleSelectQueueItem(newItem);
-      setUploadSuccess(`File "${file.name}" berhasil diunggah dan ditambahkan ke antrean (${queue.length + 1}/10).`);
+      const saved = await persistDocToBackend(newItem);
+      setQueue((prev) => [...prev, saved]);
+      handleSelectQueueItem(saved);
+      setUploadSuccess(`File "${file.name}" berhasil diunggah & tersimpan di database Prompter (${queue.length + 1}/10).`);
       setActiveTab('prompter');
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -463,7 +573,13 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                 className={`prompter-dropzone ${isLoadingFile ? 'loading' : ''}`}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (isViewer) {
+                    alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengunggah dokumen baru.");
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
               >
                 <input
                   ref={fileInputRef}
@@ -524,7 +640,25 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                 <button
                   type="button"
                   className="btn-apply-prompter"
-                  onClick={() => setActiveTab('prompter')}
+                  onClick={() => {
+                    setActiveTab('prompter');
+                    if (activeDocId) {
+                      setQueue((prev) =>
+                        prev.map((it) => (it.id === activeDocId ? { ...it, text: docText } : it))
+                      );
+                      if (!isViewer) {
+                        const token = localStorage.getItem('menkopolkam_jwt_token');
+                        fetch(`${API_BASE_URL}/api/prompter/queue/${activeDocId}`, {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                          },
+                          body: JSON.stringify({ text: docText })
+                        }).catch(() => {});
+                      }
+                    }
+                  }}
                 >
                   <Play className="w-4 h-4" />
                   Tampilkan Dokumen di Prompter
@@ -746,17 +880,15 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                       ) : (
                         /* AUTHENTIC GOVERNMENT A4 PAPER SHEET VIEW (DOCX / TEXT) */
                         <div className="authentic-paper-sheet-card">
-                          {/* Official Government Letterhead */}
+                          {/* Official Letterhead */}
                           <div className="authentic-letterhead">
                             <img
-                              src="/Kemenkopolkam.webp"
-                              alt="Garuda Pancasila Logo"
+                              src="/logo.png"
+                              alt="Dialogue AI Representative Logo"
                               className="letterhead-garuda-logo"
                             />
                             <div className="letterhead-header-text">
-                              <div className="letterhead-sub">KEMENTERIAN KOORDINATOR BIDANG POLITIK DAN KEAMANAN</div>
-                              <div className="letterhead-main">REPUBLIK INDONESIA</div>
-                              <div className="letterhead-address">Jl. Medan Merdeka Barat No. 15, Jakarta Pusat 10110 • www.polkam.go.id</div>
+                              <div className="letterhead-main font-bold">DIALOGUE AI REPRESENTATIVE</div>
                             </div>
                           </div>
                           <div className="letterhead-double-rule">
@@ -769,7 +901,7 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                             <div className="meta-col">
                               <div className="meta-row">
                                 <span className="meta-label">Nomor</span>
-                                <span className="meta-val">: NK-084/POLKAM/X/2026</span>
+                                <span className="meta-val">: DAR-084/AI/X/2026</span>
                               </div>
                               <div className="meta-row">
                                 <span className="meta-label">Sifat</span>
@@ -808,11 +940,11 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                           {/* Official Signatory Block */}
                           <div className="authentic-signature-block">
                             <div className="sig-city-date">Jakarta, 26 Oktober 2026</div>
-                            <div className="sig-role">Menteri Koordinator Bidang Politik dan Keamanan</div>
-                            <div className="sig-republic">Republik Indonesia</div>
+                            <div className="sig-role">Dialogue AI Representative</div>
+                            <div className="sig-republic">Official Documentation</div>
                             <div className="sig-stamp-mark">
                               <div className="stamp-circle">
-                                <span className="stamp-text">KEMENKO POLKAM RI</span>
+                                <span className="stamp-text">DIALOGUE AI</span>
                               </div>
                               <div className="sig-signed">[ TERTANDA RESMI ]</div>
                             </div>
@@ -821,7 +953,7 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                           {/* Footer */}
                           <div className="authentic-paper-footer">
                             <span>Halaman 1 dari {activePageCount}</span>
-                            <span>KLASIFIKASI: DOKUMEN RESMI KEMENTERIAN KOORDINATOR BIDANG POLITIK DAN KEAMANAN</span>
+                            <span>KLASIFIKASI: DOKUMEN RESMI DIALOGUE AI REPRESENTATIVE</span>
                           </div>
                         </div>
                       )}
@@ -883,7 +1015,13 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
             className="deck-drop-area"
             onDrop={handleDrop}
             onDragOver={handleDragOver}
-            onClick={() => deckFileInputRef.current?.click()}
+            onClick={() => {
+              if (isViewer) {
+                alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengunggah dokumen baru.");
+                return;
+              }
+              deckFileInputRef.current?.click();
+            }}
             title="Klik untuk memilih file PDF / DOCX"
           >
             <input
@@ -956,15 +1094,17 @@ export const DocumentPrompter: React.FC<DocumentPrompterProps> = ({
                       </div>
                     </div>
 
-                    {/* Delete Button */}
-                    <button
-                      type="button"
-                      className="deck-item-delete-btn"
-                      onClick={(e) => handleDeleteQueueItem(item.id, e)}
-                      title="Hapus dari antrean"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Delete Button (Protected by RBAC - hidden for Viewer) */}
+                    {!isViewer && (
+                      <button
+                        type="button"
+                        className="deck-item-delete-btn"
+                        onClick={(e) => handleDeleteQueueItem(item.id, e)}
+                        title="Hapus dari antrean"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 );
               })

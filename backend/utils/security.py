@@ -34,7 +34,7 @@ class InvalidClaimsError(AuthenticationError):
 def create_access_token(
     sub: str,
     role: str = "operator",
-    expires_delta_seconds: int = 3600,
+    expires_delta_seconds: Optional[int] = None,
     aud: Optional[str] = None,
     iss: Optional[str] = None,
     secret_key: Optional[str] = None,
@@ -42,14 +42,16 @@ def create_access_token(
 ) -> str:
     """
     Mints a standard JWT access token for authentication testing or internal IdP integration.
+    Default duration is 4 hours (14,400 seconds) as configured in settings.
     Never logs the token payload or secrets.
     """
     now = int(time.time())
+    ttl = expires_delta_seconds if expires_delta_seconds is not None else getattr(settings, "ACCESS_TOKEN_EXPIRE_SECONDS", 14400)
     payload: Dict[str, Any] = {
         "sub": sub,
         "role": role,
         "iat": now,
-        "exp": now + expires_delta_seconds,
+        "exp": now + ttl,
         "iss": iss or settings.JWT_ISSUER,
         "aud": aud or settings.JWT_AUDIENCE
     }

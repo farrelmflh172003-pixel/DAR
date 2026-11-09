@@ -28,13 +28,13 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="official-header">
       <div className="official-header-brand">
         <img
-          src="/Kemenkopolkam.webp"
-          alt="Kemenko Polkam Logo"
+          src="/logo.png"
+          alt="Dialogue AI Representative Logo"
           className="official-logo-img"
         />
         <div className="brand-text-col">
-          <h1 className="official-title">MENKOPOLKAM AI HUB</h1>
-          <span className="official-subtitle-badge">Kemenko Polkam RI</span>
+          <h1 className="official-title">Dialogue AI Representative</h1>
+          <span className="official-subtitle-badge">Dialogue AI Representative</span>
         </div>
       </div>
 

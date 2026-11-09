@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    APP_NAME: str = "MENKOPOLKAM AI HUB"
+    APP_NAME: str = "Dialogue AI Representative"
     ENV: str = os.getenv("ENV", "development")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_ISSUER: str = os.getenv("JWT_ISSUER", "menkopolkam-ai-hub")
     JWT_AUDIENCE: str = os.getenv("JWT_AUDIENCE", "menkopolkam-web")
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_SECONDS", str(4 * 3600)))  # 4 jam = 14400 detik
     TICKET_TTL_SECONDS: int = int(os.getenv("TICKET_TTL_SECONDS", "60"))
     MAX_CONCURRENT_SESSIONS_PER_USER: int = int(os.getenv("MAX_CONCURRENT_SESSIONS_PER_USER", "2"))
     MAX_FAILED_HANDSHAKES_PER_IP: int = int(os.getenv("MAX_FAILED_HANDSHAKES_PER_IP", "10"))

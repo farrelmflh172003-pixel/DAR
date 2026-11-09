@@ -108,11 +108,21 @@ class MariaDBService:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
-            # Seed default system accounts: Admin, Superadmin, Viewer
+            # Seed default system accounts (Ring 1 Defense Edition - 10 Users)
             users = [
-                ('admin', 'admin', 'Admin Operasional', 'Admin', '🛡️', 'Administrator Operasional Pusat Kemenko Polkam', True),
+                ('jenderal.dudung', 'DudungVVIP2026!', 'Jenderal TNI (Purn.) Prof. Dr. Dudung Abdurachman', 'Menteri', '🎖️', 'Penasihat Khusus Presiden RI Urusan Pertahanan Nasional (Principal VVIP)', True),
+                ('stafahli.geopolitik', 'Geopolitik2026!', 'Staf Ahli Geopolitik & Hukum Laut', 'Admin', '🌐', 'Tenaga Ahli Analisis Wilayah Maritim & UNCLOS 1982', True),
+                ('stafahli.alutsista', 'Alutsista2026!', 'Staf Ahli Doktrin & Industri Pertahanan', 'Admin', '🛡️', 'Tenaga Ahli Modernisasi Alutsista & Kebijakan Strategis Pertahanan', True),
+                ('stafahli.siber', 'SiberSandi2026!', 'Staf Ahli Keamanan Siber & Intelijen', 'Admin', '🛰️', 'Tenaga Ahli Ketahanan Siber & Intelijen Strategis', True),
+                ('ajudan.adc1', 'AjudanVVIP2026!', 'Kolonel Inf. Ajudan Pribadi 1 (ADC Lapangan)', 'Menteri', '📱', 'Ajudan Utama Pendamping Sidang & Protokoler VVIP (Mobile APK)', True),
+                ('ajudan.adc2', 'AjudanVVIP2026!', 'Letkol Laut Ajudan Pribadi 2 (ADC Operasional)', 'Menteri', '💼', 'Ajudan Lapangan Koordinasi Logistik & Pengawalan Delegasi (Mobile APK)', True),
+                ('notulis.utama', 'Notulis2026!', 'Mayor Perwira Notulis Sidang Utama', 'Admin', '📝', 'Perumus Notulensi & Verifikator Dokumen Kenegaraan Resmi', True),
+                ('notulis.analis', 'Analis2026!', 'Analis Data & Rangkuman Dokumen', 'Admin', '📊', 'Editor Naskah Dokumen & Rekomendasi Penyelesaian Kebijakan', True),
+                ('viewer.pemantau', 'Viewer2026!', 'Ruang Pantau / Pengamat Sidang', 'Viewer', '👁️', 'Akses Pantau Notulensi & Live Teleprompter (Mode Peninjau)', False),
+                ('admin.sandi', 'SandiSistem2026!', 'Administrator Sandi & Keamanan Sistem', 'Superadmin', '⚡', 'Superadmin Sistem, Manajemen Kunci Enkripsi & Audit Keamanan', True),
+                ('admin', 'admin', 'Admin Operasional', 'Admin', '🛡️', 'Administrator Operasional Pusat Dialogue AI Representative', True),
                 ('superadmin', 'superadmin', 'Superadmin Sistem', 'Superadmin', '⚡', 'Superadmin Keamanan & Akses Penuh Sistem', True),
-                ('viewer', 'viewer', 'Pengamat Kebijakan', 'Viewer', '👁️', 'Pengamat & Peninjau Dokumen Resmi Polkam (Akses Pantau)', False),
+                ('viewer', 'viewer', 'Pengamat Kebijakan', 'Viewer', '👁️', 'Pengamat & Peninjau Dokumen Resmi Dialogue AI Representative (Akses Pantau)', False),
             ]
             for u in users:
                 cursor.execute("""

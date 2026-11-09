@@ -72,6 +72,9 @@ def test_spa_serving_and_static_assets():
 
 def test_saved_files_crud_lifecycle():
     """Verify full CRUD lifecycle on saved questions / answers."""
+    admin_token = create_access_token(sub="operator-diplomat", role="diplomat")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
     # 1. Create
     new_doc = {
         "title": "Uji Integrasi Kemenko Polkam 2026",
@@ -91,25 +94,25 @@ def test_saved_files_crud_lifecycle():
         },
         "selected_answer": "Kesiapan siber nasional prima."
     }
-    create_res = client.post("/api/saved-files", json=new_doc)
+    create_res = client.post("/api/saved-files", json=new_doc, headers=headers)
     assert create_res.status_code == 200
     created_id = create_res.json().get("id")
     assert created_id is not None
 
     # 2. Read list
-    list_res = client.get("/api/saved-files")
+    list_res = client.get("/api/saved-files", headers=headers)
     assert list_res.status_code == 200
     files = list_res.json()
     assert any(f.get("id") == created_id for f in files)
 
     # 3. Update (Card 11 auto-sync behavior)
     updated_text = "Updated Selected Answer from Card 11 Automation"
-    update_res = client.put(f"/api/saved-files/{created_id}", json={"selected_answer": updated_text})
+    update_res = client.put(f"/api/saved-files/{created_id}", json={"selected_answer": updated_text}, headers=headers)
     assert update_res.status_code == 200
     assert update_res.json().get("selected_answer") == updated_text
 
     # 4. Delete
-    del_res = client.delete(f"/api/saved-files/{created_id}")
+    del_res = client.delete(f"/api/saved-files/{created_id}", headers=headers)
     assert del_res.status_code == 200
     assert del_res.json().get("status") == "success"
 

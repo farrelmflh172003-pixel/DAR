@@ -55,17 +55,52 @@ export const App: React.FC = () => {
   const [triggerMicOnNewFile, setTriggerMicOnNewFile] = useState(false);
   const [injectedPrompterDoc, setInjectedPrompterDoc] = useState<QueueDocumentItem | null>(null);
 
+  // Session Lifetime: 4 Jam (14,400,000 milidetik = 14,400 detik)
+  const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+
   // Authentication State: defaults to null so landing page is the login page
+  // Enforces 4-hour session lifetime with automatic expiration
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem('menkopolkam_active_user');
-      if (saved) return JSON.parse(saved);
+      const loginTimestamp = localStorage.getItem('menkopolkam_login_timestamp');
+      if (saved && loginTimestamp) {
+        const elapsed = Date.now() - Number(loginTimestamp);
+        if (elapsed > SESSION_TTL_MS) {
+          // Sesi 4 jam telah berakhir
+          localStorage.removeItem('menkopolkam_active_user');
+          localStorage.removeItem('menkopolkam_jwt_token');
+          localStorage.removeItem('menkopolkam_login_timestamp');
+          return null;
+        }
+        return JSON.parse(saved);
+      } else if (saved && !loginTimestamp) {
+        // Inisialisasi awal timestamp sesi 4 jam
+        localStorage.setItem('menkopolkam_login_timestamp', String(Date.now()));
+        return JSON.parse(saved);
+      }
     } catch {
       // Fallback
     }
     return null;
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Auto-logout watcher: checks session expiration every minute
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      const loginTimestamp = localStorage.getItem('menkopolkam_login_timestamp');
+      if (loginTimestamp) {
+        const elapsed = Date.now() - Number(loginTimestamp);
+        if (elapsed > SESSION_TTL_MS) {
+          alert('Sesi login Anda telah berakhir (masa berlaku 4 jam). Silakan login kembali untuk melanjutkan.');
+          handleLogout();
+        }
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Sync user to localStorage
   useEffect(() => {
@@ -87,37 +122,6 @@ export const App: React.FC = () => {
       if (res.ok) {
         const data: SavedFile[] = await res.json();
         setSavedFiles(data);
-        if (data && data.length > 0) {
-          // If active workspace is empty, auto-load the most recent valid saved session
-          setSessionData((current) => {
-            if (!current.canonical_question?.id && !current.canonical_question?.original_text) {
-              const validDoc = data.find((f: SavedFile) => {
-                const isStressTest = f.title?.startsWith('Concurrent Stress') || f.title?.startsWith('Concurrency Audit');
-                const hasContent = Boolean(
-                  (f.selected_answer && f.selected_answer.trim()) ||
-                  (f.chatgpt_answers?.main_answer && f.chatgpt_answers.main_answer.trim()) ||
-                  (f.gemini_answers?.main_answer && f.gemini_answers.main_answer.trim()) ||
-                  (f.ai_answers?.main_answer && f.ai_answers.main_answer.trim()) ||
-                  (f.original_audio_text && f.original_audio_text.trim())
-                );
-                return !isStressTest && hasContent;
-              });
-              if (validDoc) {
-                setTimeout(() => handleLoadSavedFile(validDoc), 0);
-              } else {
-                setTimeout(() => fetchScenario('natuna_unclos'), 0);
-              }
-            }
-            return current;
-          });
-        } else {
-          setSessionData((current) => {
-            if (!current.canonical_question?.id && !current.canonical_question?.original_text) {
-              setTimeout(() => fetchScenario('natuna_unclos'), 0);
-            }
-            return current;
-          });
-        }
       }
     } catch (err) {
       console.warn('Could not fetch saved files list:', err);
@@ -154,6 +158,7 @@ export const App: React.FC = () => {
     setCurrentUser(user);
     try {
       localStorage.setItem('menkopolkam_jwt_token', token);
+      localStorage.setItem('menkopolkam_login_timestamp', String(Date.now()));
     } catch {
       // Ignored
     }
@@ -165,6 +170,7 @@ export const App: React.FC = () => {
     try {
       localStorage.removeItem('menkopolkam_active_user');
       localStorage.removeItem('menkopolkam_jwt_token');
+      localStorage.removeItem('menkopolkam_login_timestamp');
     } catch {
       // Ignored
     }
@@ -189,8 +195,8 @@ export const App: React.FC = () => {
         brief_analysis: file.chatgpt_answers?.brief_analysis || file.ai_answers?.brief_analysis || '',
         monitoring_issues: file.chatgpt_answers?.monitoring_issues || file.ai_answers?.monitoring_issues || `Hasil pemantauan operasional lapangan terhadap isu ${file.translated_indonesian_text || file.title}: Teridentifikasi dinamika koordinasi teknis dan kebutuhan validasi data faktual secara cepat.`,
         resolution_recommendations: file.chatgpt_answers?.resolution_recommendations || file.ai_answers?.resolution_recommendations || `1. Akselerasi debottlenecking hambatan operasional.\n2. Penyelarasan SOP taktis instansi teknis terkait.`,
-        kemenko_role: file.chatgpt_answers?.kemenko_role || file.ai_answers?.kemenko_role || `Menko Polkam memimpin koordinasi lintas K/L terkait dan mengawal implementasi kebijakan.`,
-        field_monitoring_agenda: file.chatgpt_answers?.field_monitoring_agenda || file.ai_answers?.field_monitoring_agenda || `1. Pelaksanaan rapat koordinasi terpadu pimpinan K/L.\n2. Peninjauan lapangan dan verifikasi faktual.`,
+        kemenko_role: file.chatgpt_answers?.kemenko_role || file.ai_answers?.kemenko_role || `Dialogue AI Representative memimpin koordinasi lintas instansi dan mitra terkait serta mengawal implementasi kebijakan.`,
+        field_monitoring_agenda: file.chatgpt_answers?.field_monitoring_agenda || file.ai_answers?.field_monitoring_agenda || `1. Pelaksanaan rapat koordinasi terpadu pimpinan Dialogue AI Representative.\n2. Peninjauan lapangan dan verifikasi faktual.`,
         latest_news: file.chatgpt_answers?.latest_news || file.ai_answers?.latest_news || `Liputan berita teraktual dan pemantauan isu '${file.translated_indonesian_text || file.title}' terus dimonitor secara real-time dari kantor berita resmi dan verifikasi fakta lapangan.`,
         model_version: "ChatGPT"
       },
@@ -200,13 +206,14 @@ export const App: React.FC = () => {
         brief_analysis: file.gemini_answers?.brief_analysis || file.ai_answers?.brief_analysis || '',
         monitoring_issues: file.gemini_answers?.monitoring_issues || file.ai_answers?.monitoring_issues || `Kajian stabilitas dan pemantauan intelijen strategis atas isu ${file.translated_indonesian_text || file.title}: Menunjukkan urgensi perlindungan ketahanan sosial-politik dan mitigasi eskalasi konflik.`,
         resolution_recommendations: file.gemini_answers?.resolution_recommendations || file.ai_answers?.resolution_recommendations || `1. Formulasi kebijakan antisipatif jangka panjang.\n2. Konsolidasi kepemimpinan strategis nasional dan diplomasi preventif.`,
-        kemenko_role: file.gemini_answers?.kemenko_role || file.ai_answers?.kemenko_role || `Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis kenegaraan.`,
-        field_monitoring_agenda: file.gemini_answers?.field_monitoring_agenda || file.ai_answers?.field_monitoring_agenda || `1. Aktivasi desk pemantauan terpadu 24/7 di bawah Deputi terkait Kemenko Polkam.\n2. Agenda peninjauan lapangan berkala bersama Forkopimda.`,
+        kemenko_role: file.gemini_answers?.kemenko_role || file.ai_answers?.kemenko_role || `Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis Dialogue AI Representative.`,
+        field_monitoring_agenda: file.gemini_answers?.field_monitoring_agenda || file.ai_answers?.field_monitoring_agenda || `1. Aktivasi desk pemantauan terpadu 24/7 di bawah Dialogue AI Representative.\n2. Agenda peninjauan lapangan berkala bersama pimpinan wilayah.`,
         latest_news: file.gemini_answers?.latest_news || file.ai_answers?.latest_news || `Laporan pemberitaan media terverifikasi dan siaran pers resmi terkait '${file.translated_indonesian_text || file.title}' dihimpun secara komprehensif guna menjaga ketepatan informasi publik.`,
         model_version: "Gemini"
       },
-      english_translations: {},
-      selected_answer: file.selected_answer || file.ai_answers?.main_answer || file.chatgpt_answers?.main_answer || file.gemini_answers?.main_answer || ''
+      english_translations: file.english_translations || {},
+      selected_answer: file.selected_answer || file.ai_answers?.main_answer || file.chatgpt_answers?.main_answer || file.gemini_answers?.main_answer || '',
+      selected_answer_en: file.selected_answer_en || file.english_translations?.card_11 || ''
     };
     setSessionData(loadedSet);
     setActiveScenarioId(file.id);
@@ -214,10 +221,28 @@ export const App: React.FC = () => {
 
   // Delete saved file
   const handleDeleteSavedFile = async (fileId: string) => {
+    if (currentUser?.role === 'Viewer') {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan menghapus dokumen.");
+      return;
+    }
+    const token = localStorage.getItem('menkopolkam_jwt_token');
     try {
       const res = await fetch(`${API_BASE_URL}/api/saved-files/${fileId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
       });
+      if (res.status === 403) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Akses Ditolak oleh Server (403): Anda tidak memiliki izin untuk menghapus dokumen.");
+        return;
+      }
+      if (res.status === 401) {
+        alert("Sesi autentikasi berakhir. Silakan login kembali.");
+        handleLogout();
+        return;
+      }
       if (res.ok) {
         await fetchSavedFiles();
         if (activeScenarioId === fileId) {
@@ -229,14 +254,70 @@ export const App: React.FC = () => {
     }
   };
 
+  // Bulk delete saved files
+  const handleDeleteMultipleSavedFiles = async (fileIds: string[]) => {
+    if (fileIds.length === 0) return;
+    if (currentUser?.role === 'Viewer') {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan menghapus dokumen.");
+      return;
+    }
+    const token = localStorage.getItem('menkopolkam_jwt_token');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/saved-files/bulk-delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ ids: fileIds })
+      });
+      if (res.status === 403) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Akses Ditolak oleh Server (403): Anda tidak memiliki izin untuk menghapus dokumen.");
+        return;
+      }
+      if (res.status === 401) {
+        alert("Sesi autentikasi berakhir. Silakan login kembali.");
+        handleLogout();
+        return;
+      }
+      if (res.ok) {
+        await fetchSavedFiles();
+        if (fileIds.includes(activeScenarioId)) {
+          handleNewFile();
+        }
+      }
+    } catch (err) {
+      console.error('Error bulk deleting files:', err);
+    }
+  };
+
   // Update/Edit saved file
   const handleUpdateSavedFile = async (fileId: string, updatedData: Partial<SavedFile>) => {
+    if (currentUser?.role === 'Viewer') {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengubah dokumen.");
+      return;
+    }
+    const token = localStorage.getItem('menkopolkam_jwt_token');
     try {
       const res = await fetch(`${API_BASE_URL}/api/saved-files/${fileId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(updatedData)
       });
+      if (res.status === 403) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.detail || "Akses Ditolak oleh Server (403): Anda tidak memiliki izin untuk mengubah dokumen.");
+        return;
+      }
+      if (res.status === 401) {
+        alert("Sesi autentikasi berakhir. Silakan login kembali.");
+        handleLogout();
+        return;
+      }
       if (res.ok) {
         const updated = await res.json();
         await fetchSavedFiles();
@@ -263,6 +344,8 @@ export const App: React.FC = () => {
         original_audio_text: origText,
         translated_indonesian_text: transText,
         selected_answer: newSet.selected_answer || newSet.chatgpt?.main_answer || newSet.gemini?.main_answer || '',
+        selected_answer_en: newSet.english_translations?.card_11 || newSet.english_translations?.card_3 || newSet.english_translations?.card_8 || '',
+        english_translations: newSet.english_translations || {},
         ai_answers: {
           main_answer: newSet.gemini?.main_answer || newSet.chatgpt?.main_answer || '',
           concise_answer: newSet.gemini?.concise_answer || newSet.chatgpt?.concise_answer || '',
@@ -298,13 +381,19 @@ export const App: React.FC = () => {
         }
       };
 
-      fetch(`${API_BASE_URL}/api/saved-files/${qId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-      .then(() => fetchSavedFiles())
-      .catch(() => {});
+      if (currentUser?.role !== 'Viewer') {
+        const token = localStorage.getItem('menkopolkam_jwt_token');
+        fetch(`${API_BASE_URL}/api/saved-files/${qId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(payload)
+        })
+        .then(() => fetchSavedFiles())
+        .catch(() => {});
+      }
     }
   };
 
@@ -319,6 +408,10 @@ export const App: React.FC = () => {
   // Upload Selected Questions/Answers to Document Teleprompter as official authentic PDF
   const handleUploadToPrompter = async (files: SavedFile[]) => {
     if (files.length === 0) return;
+    if (currentUser?.role === 'Viewer') {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak pantau (Read-Only). Anda tidak diizinkan mengunggah dokumen ke Prompter.");
+      return;
+    }
 
     try {
       // 1. Generate identical official formatted PDF as Ekspor PDF
@@ -399,7 +492,7 @@ export const App: React.FC = () => {
         {(viewMode === 'split' || viewMode === 'assistant') && (
           <section
             className={`pane-column pane-left-assistant ${viewMode === 'assistant' ? 'full-width' : ''}`}
-            aria-label="Asisten Diplomasi AI Menkopolkam"
+            aria-label="Dialogue AI Representative"
           >
             <CardsGrid
               data={sessionData}
@@ -428,6 +521,7 @@ export const App: React.FC = () => {
               onSendToAi={handleSendDocToAi}
               injectedDoc={injectedPrompterDoc}
               onInjectedDocHandled={() => setInjectedPrompterDoc(null)}
+              currentUser={currentUser}
             />
           </section>
         )}
@@ -440,9 +534,11 @@ export const App: React.FC = () => {
         files={savedFiles}
         onLoadFile={handleLoadSavedFile}
         onDeleteFile={handleDeleteSavedFile}
+        onDeleteMultipleFiles={handleDeleteMultipleSavedFiles}
         onUpdateFile={handleUpdateSavedFile}
         onNewFile={handleNewFile}
         onUploadToPrompter={handleUploadToPrompter}
+        currentUser={currentUser}
       />
 
       {/* Login Modal for switching account inside the workspace */}

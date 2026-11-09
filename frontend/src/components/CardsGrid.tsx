@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Square, Play, Pause, Send, Pencil, Check, X, Gauge, Paperclip, FileText, Loader2, BookOpen } from 'lucide-react';
 import type { DiplomaticResponseSet, SelectableCardId } from '../types';
 import { HubAnimatedCard } from './ui/animated-card';
@@ -35,12 +35,30 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
 }) => {
   const { canonical_question, canonical_translation_id, chatgpt, gemini } = data;
 
+  const [liveStreamingText, setLiveStreamingText] = useState<string>('');
+
+  const hasExistingData = Boolean(
+    canonical_question?.original_text?.trim() ||
+    canonical_translation_id?.trim() ||
+    chatgpt?.main_answer?.trim() ||
+    gemini?.main_answer?.trim() ||
+    liveStreamingText?.trim()
+  );
+
   // Multiple Choice Card Selection on Main Page
-  const [selectedCardIds, setSelectedCardIds] = useState<SelectableCardId[]>([3]);
+  const [selectedCardIds, setSelectedCardIds] = useState<SelectableCardId[]>([]);
   const [selectedAnswerLang, setSelectedAnswerLang] = useState<'en' | 'id'>('en');
   const [translatedEnglishText, setTranslatedEnglishText] = useState<string>('');
   const [isTranslatingSelected, setIsTranslatingSelected] = useState<boolean>(false);
+  const [cardTranslations, setCardTranslations] = useState<Record<string, string>>({});
   const lastTranslatedSourceRef = useRef<string>('');
+  const cardTranslationCacheRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    if (hasExistingData && selectedCardIds.length === 0) {
+      setSelectedCardIds([3]);
+    }
+  }, [hasExistingData]);
 
   // Inline editing state for cards on main page
   const [editingCardId, setEditingCardId] = useState<SelectableCardId | null>(null);
@@ -51,13 +69,23 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
   const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
   const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
   const [audioDuration, setAudioDuration] = useState<number>(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
+    try {
+      localStorage.removeItem('menkopolkam_tts_speed');
+      localStorage.removeItem('menkopolkam_tts_speed_v2');
+      const saved = localStorage.getItem('dialogue_ai_tts_speed_v3');
+      if (saved) {
+        const val = Number(saved);
+        if (!isNaN(val) && val > 0) return val;
+      }
+    } catch {}
+    return 0.75;
+  });
   const currentAudioTextRef = useRef<string>('');
   const webSpeechTimerRef = useRef<any>(null);
   // Full-Duplex Continuous Live Voice State (Gemini & ChatGPT Live Experience)
   const [isUnifiedLiveActive, setIsUnifiedLiveActive] = useState<boolean>(false);
   const isUnifiedLiveActiveRef = useRef<boolean>(false);
-  const [liveStreamingText, setLiveStreamingText] = useState<string>('');
   const [isProcessingLive, setIsProcessingLive] = useState<boolean>(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState<boolean>(false);
   const isAiSpeakingRef = useRef<boolean>(false);
@@ -67,17 +95,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const hasExistingData = Boolean(
-    canonical_question?.original_text?.trim() ||
-    canonical_translation_id?.trim() ||
-    chatgpt?.main_answer?.trim() ||
-    gemini?.main_answer?.trim() ||
-    liveStreamingText?.trim()
-  );
-
   const resetAllSessionData = () => {
     stopAllAudio();
-    setSelectedCardIds([3]);
+    setSelectedCardIds([]);
     setLiveStreamingText('');
     latestSpokenRef.current = '';
     accumulatedTranscriptRef.current = '';
@@ -299,6 +319,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
 
   const handleSpeedChange = (newSpeed: number) => {
     setPlaybackSpeed(newSpeed);
+    try {
+      localStorage.setItem('dialogue_ai_tts_speed_v3', String(newSpeed));
+    } catch {}
     if (audioPlayerRef.current) {
       try {
         audioPlayerRef.current.playbackRate = newSpeed;
@@ -333,7 +356,7 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
       const res = await fetch(`${API_BASE_URL}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.trim(), voice: 'Kore' })
+        body: JSON.stringify({ text: text.trim(), voice: 'Aoede' })
       });
 
       if (res.ok) {
@@ -413,6 +436,40 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
     utterance.lang = selectedAnswerLang === 'en' ? 'en-US' : 'id-ID';
     utterance.rate = playbackSpeed;
 
+    // Strictly select female voice (cewe) only
+    try {
+      const allVoices = window.speechSynthesis.getVoices();
+      if (allVoices && allVoices.length > 0) {
+        const langPrefix = selectedAnswerLang === 'en' ? 'en' : 'id';
+        const matchingLangVoices = allVoices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
+        const candidatePool = matchingLangVoices.length > 0 ? matchingLangVoices : allVoices;
+
+        const femaleNames = [
+          'female', 'zira', 'jenny', 'ava', 'samantha', 'victoria', 'karen', 'susan',
+          'gadis', 'putri', 'siti', 'indah', 'aria', 'hazel', 'cathy', 'natasha',
+          'google us english', 'google bahasa indonesia'
+        ];
+        const maleNames = ['male', 'david', 'mark', 'george', 'andika', 'guy', 'stefan', 'richard'];
+
+        // 1. Explicit female voice in target language
+        let chosenFemaleVoice = candidatePool.find(v => {
+          const nameLower = v.name.toLowerCase();
+          return femaleNames.some(fn => nameLower.includes(fn)) && !maleNames.some(mn => nameLower.includes(mn));
+        });
+
+        // 2. Fallback: Any voice that is not male
+        if (!chosenFemaleVoice) {
+          chosenFemaleVoice = candidatePool.find(v => !maleNames.some(mn => v.name.toLowerCase().includes(mn)));
+        }
+
+        if (chosenFemaleVoice) {
+          utterance.voice = chosenFemaleVoice;
+        }
+      }
+    } catch {
+      // Ignored
+    }
+
     // Estimate duration so timeline slider and timer actively display progress
     const words = text.trim().split(/\s+/).length;
     const estimatedDuration = Math.max(3, Math.round(words / 2.5));
@@ -483,7 +540,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
           ? chatgpt.latest_news.trim()
           : (data.live_sources && data.live_sources.length > 0)
             ? `**Rangkuman Berita & Pemantauan Terkini (ChatGPT)**:\n\n` + data.live_sources.slice(0, 4).map(s => `- 📰 **Berita Terpantau**: ${s}`).join('\n') + `\n\n- **Status Pemantauan**: Informasi terus dimutakhirkan melalui pelaporan terpercaya media arus utama dan kanal resmi pemerintah.`
-            : `**Rangkuman Berita & Pemantauan Terkini (ChatGPT)**:\n\n- 📰 **Liputan Terkini**: Perkembangan isu **${canonical_question?.original_text || 'terkait'}** terus dipantau secara real-time dari kanal informasi resmi dan kantor berita nasional.\n- **Status Verifikasi**: Data diperbarui secara berkala guna mendukung analisis situasional yang akurat.`;
+            : (canonical_question?.original_text && canonical_question.original_text.trim())
+              ? `**Rangkuman Berita & Pemantauan Terkini (ChatGPT)**:\n\n- 📰 **Liputan Terkini**: Perkembangan isu **${canonical_question.original_text}** terus dipantau secara real-time dari kanal informasi resmi dan kantor berita nasional.\n- **Status Verifikasi**: Data diperbarui secara berkala guna mendukung analisis situasional yang akurat.`
+              : '';
       case 16:
         return gemini?.monitoring_issues || '';
       case 17:
@@ -497,7 +556,9 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
           ? gemini.latest_news.trim()
           : (data.live_sources && data.live_sources.length > 0)
             ? `**Laporan Berita & Data Faktual Terupdate (Gemini)**:\n\n` + data.live_sources.slice(0, 4).map(s => `- 🌐 **Laporan Berita**: ${s}`).join('\n') + `\n\n- **Sorotan Utama**: Rilis resmi kementerian/lembaga dan perkembangan media dihimpun untuk memastikan ketepatan data situasi nasional.`
-            : `**Laporan Berita & Data Faktual Terupdate (Gemini)**:\n\n- 🌐 **Rilis Media & Fakta**: Laporan pemberitaan mutakhir dan siaran pers resmi terkait isu **${canonical_question?.original_text || 'terkait'}** dihimpun secara komprehensif.\n- **Sorotan**: Pemutakhiran dilakukan secara kontinu guna menjamin keandalan data dan koordinasi penanganan strategis.`;
+            : (canonical_question?.original_text && canonical_question.original_text.trim())
+              ? `**Laporan Berita & Data Faktual Terupdate (Gemini)**:\n\n- 🌐 **Rilis Media & Fakta**: Laporan pemberitaan mutakhir dan siaran pers resmi terkait isu **${canonical_question.original_text}** dihimpun secara komprehensif.\n- **Sorotan**: Pemutakhiran dilakukan secara kontinu guna menjamin keandalan data dan koordinasi penanganan strategis.`
+              : '';
       default:
         return '';
     }
@@ -515,7 +576,70 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
     || (gemini?.main_answer && gemini.main_answer.trim())
     || '';
 
-  // Automatic translation for selected cards into English (Card 11)
+  // Helper to detect if a string is still Indonesian (not translated to English)
+  const isLikelyIndonesian = useCallback((text: string): boolean => {
+    if (!text || !text.trim()) return false;
+    const lower = ` ${text.toLowerCase()} `;
+    const idMarkers = [
+      ' yang ', ' dan ', ' di ', ' dari ', ' ini ', ' untuk ', ' pada ', ' adalah ',
+      ' dengan ', ' secara ', ' oleh ', ' berdasarkan ', ' kemenangan ', ' mencetak ',
+      ' perpanjangan ', ' waktu ', ' terkini ', ' terupdate ', ' pemantauan ', ' laporan ',
+      ' hasil ', ' rekomendasi ', ' kementerian ', ' kebijakan ', ' babak '
+    ];
+    let matches = 0;
+    for (const m of idMarkers) {
+      if (lower.includes(m)) matches++;
+    }
+    return matches >= 2;
+  }, []);
+
+  // Helper to retrieve precomputed or cached English translation for any card
+  const getCardEnglishContent = useCallback((cardId: SelectableCardId): string => {
+    // 1. Direct from React state translation map
+    const stateTr = cardTranslations[`card_${cardId}`];
+    if (stateTr && stateTr.trim() && !isLikelyIndonesian(stateTr)) {
+      return stateTr.trim();
+    }
+    // 2. Direct from backend english_translations
+    const direct = data.english_translations?.[`card_${cardId}`];
+    if (direct && direct.trim() && !isLikelyIndonesian(direct)) {
+      return direct.trim();
+    }
+    // 3. Direct from local card translation cache
+    const cached = cardTranslationCacheRef.current[`card_${cardId}`];
+    if (cached && cached.trim() && !isLikelyIndonesian(cached)) {
+      return cached.trim();
+    }
+    // 4. Question cards (1, 2, 6, 7): if source question was in English, return original English
+    if ((cardId === 1 || cardId === 6) && canonical_question?.detected_language === 'en') {
+      return (canonical_question.original_text || '').trim();
+    }
+    if ((cardId === 2 || cardId === 7) && canonical_question?.detected_language === 'en') {
+      return (canonical_question.original_text || '').trim();
+    }
+    return '';
+  }, [data.english_translations, canonical_question, cardTranslations, isLikelyIndonesian]);
+
+  // Synchronously compute composite English text matching EXACT selection order (0ms instant!)
+  const compositeEnglishFromCards = useMemo(() => {
+    if (selectedCardIds.length === 0) {
+      const c11 = data.english_translations?.card_11;
+      if (c11 && !isLikelyIndonesian(c11)) return c11.trim();
+      const selEn = data.selected_answer_en;
+      if (selEn && !isLikelyIndonesian(selEn)) return selEn.trim();
+      const c3 = getCardEnglishContent(3);
+      if (c3) return c3;
+      const directC3 = data.english_translations?.card_3;
+      if (directC3 && !isLikelyIndonesian(directC3)) return directC3.trim();
+      return '';
+    }
+    const parts = selectedCardIds
+      .map(id => getCardEnglishContent(id))
+      .filter(t => t.trim().length > 0 && !isLikelyIndonesian(t));
+    return parts.join('\n\n');
+  }, [selectedCardIds, getCardEnglishContent, data.english_translations, data.selected_answer_en, cardTranslations, isLikelyIndonesian]);
+
+  // Automatic translation for any selected cards missing English translation
   useEffect(() => {
     if (!combinedSelectedText || !combinedSelectedText.trim()) {
       setTranslatedEnglishText('');
@@ -524,79 +648,108 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
       return;
     }
 
-    // Single card selection: check if backend already returned precomputed english translation
-    if (selectedCardIds.length === 1) {
-      const singleId = selectedCardIds[0];
-      const precomputed = data.english_translations?.[`card_${singleId}`];
-      if (precomputed && precomputed.trim()) {
-        setTranslatedEnglishText(precomputed.trim());
-        lastTranslatedSourceRef.current = combinedSelectedText.trim();
-        setIsTranslatingSelected(false);
-        return;
-      }
-    }
-
-    // Skip redundant network call if source is unchanged
-    if (lastTranslatedSourceRef.current === combinedSelectedText.trim()) {
+    const activeIdsToTranslate = selectedCardIds.length > 0 ? selectedCardIds : ([3] as SelectableCardId[]);
+    // Check which selected cards are missing English translation
+    const missingCardIds = activeIdsToTranslate.filter(id => !getCardEnglishContent(id));
+    if (missingCardIds.length === 0) {
+      setIsTranslatingSelected(false);
       return;
     }
 
     let isCancelled = false;
     setIsTranslatingSelected(true);
 
-    const timer = setTimeout(async () => {
+    const translateMissing = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/translate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: combinedSelectedText.trim(),
-            target_lang: 'en',
-            source_lang: 'id'
+        await Promise.all(
+          missingCardIds.map(async (id) => {
+            const rawText = getCardContent(id).trim();
+            if (!rawText) return;
+            const res = await fetch(`${API_BASE_URL}/api/translate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: rawText,
+                target_lang: 'en',
+                source_lang: 'id'
+              })
+            });
+            if (res.ok && !isCancelled) {
+              const resJson = await res.json();
+              if (resJson.translated_text) {
+                const tr = resJson.translated_text.trim();
+                if (!isLikelyIndonesian(tr)) {
+                  cardTranslationCacheRef.current[`card_${id}`] = tr;
+                  if (data.english_translations) {
+                    data.english_translations[`card_${id}`] = tr;
+                  }
+                  setCardTranslations(prev => ({ ...prev, [`card_${id}`]: tr }));
+                }
+              }
+            }
           })
-        });
-
-        if (res.ok && !isCancelled) {
-          const resJson = await res.json();
-          if (resJson.translated_text) {
-            setTranslatedEnglishText(resJson.translated_text.trim());
-            lastTranslatedSourceRef.current = combinedSelectedText.trim();
+        );
+        if (!isCancelled) {
+          const freshEnglish = activeIdsToTranslate
+            .map(id => getCardEnglishContent(id) || cardTranslationCacheRef.current[`card_${id}`] || '')
+            .filter(t => t && !isLikelyIndonesian(t))
+            .join('\n\n');
+          if (freshEnglish) {
+            setTranslatedEnglishText(freshEnglish);
           }
         }
       } catch (err) {
-        console.warn('Auto translation of Card 11 failed:', err);
+        console.warn('Auto translation of missing cards failed:', err);
       } finally {
         if (!isCancelled) {
           setIsTranslatingSelected(false);
         }
       }
-    }, 250);
+    };
+
+    translateMissing();
 
     return () => {
       isCancelled = true;
-      clearTimeout(timer);
     };
-  }, [combinedSelectedText, selectedCardIds, data.english_translations]);
+  }, [selectedCardIds, combinedSelectedText, getCardEnglishContent, data.english_translations, isLikelyIndonesian]);
 
-  // Sync selected answer to saved file in database
+  // Sync selected answer to saved file in database (including English translation for Card 11)
   useEffect(() => {
     if (!combinedSelectedText || !data.canonical_question?.id) return;
     const timer = setTimeout(() => {
+      const token = localStorage.getItem('menkopolkam_jwt_token');
+      const activeEn = (compositeEnglishFromCards.trim() || translatedEnglishText.trim());
+      const updatedPayload: Record<string, any> = {
+        selected_answer: combinedSelectedText
+      };
+      if (activeEn) {
+        updatedPayload.selected_answer_en = activeEn;
+        updatedPayload.english_translations = {
+          ...(data.english_translations || {}),
+          card_11: activeEn,
+          selected_answer: activeEn
+        };
+      }
       fetch(`${API_BASE_URL}/api/saved-files/${data.canonical_question.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selected_answer: combinedSelectedText })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(updatedPayload)
       })
       .then(() => onRefreshSavedFiles?.())
       .catch(() => {});
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [combinedSelectedText, data.canonical_question?.id]);
+  }, [combinedSelectedText, compositeEnglishFromCards, translatedEnglishText, data.canonical_question?.id, data.english_translations]);
 
   // Determine active text for Card 11 based on language toggle (default 'en')
+  // Instantaneous English synthesis strictly ordered by card selection!
   const currentCard11Text = selectedAnswerLang === 'en'
-    ? (translatedEnglishText.trim() || combinedSelectedText.trim())
+    ? (compositeEnglishFromCards.trim() || (!isLikelyIndonesian(translatedEnglishText) ? translatedEnglishText.trim() : ''))
     : combinedSelectedText.trim();
 
   const getSelectedSourceLabel = (): string => {
@@ -612,7 +765,7 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
         case 5: return 'ChatGPT (Analisis)';
         case 12: return 'ChatGPT (Isu Lapangan)';
         case 13: return 'ChatGPT (Rekomendasi)';
-        case 14: return 'ChatGPT (Peran Kemenko)';
+        case 14: return 'Jawaban (Peran Kemenkopolkam)';
         case 15: return 'ChatGPT (Agenda Lapangan)';
         case 20: return 'ChatGPT (Berita Terkini)';
         case 8: return 'Gemini (Utama)';
@@ -646,9 +799,15 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
       if (data.selected_answer && data.selected_answer.trim()) {
         const matched: SelectableCardId[] = [];
         const candidateCards: SelectableCardId[] = [3, 8, 4, 9, 5, 10, 14, 18, 15, 19, 12, 16, 13, 17, 20, 21];
+        const cleanSaved = data.selected_answer.toLowerCase().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
         for (const cid of candidateCards) {
           const content = getCardContent(cid).trim();
-          if (content && data.selected_answer.includes(content)) {
+          const cleanIndo = content.toLowerCase().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+          const englishContent = getCardEnglishContent(cid).trim();
+          const cleanEn = englishContent.toLowerCase().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+          if (cleanIndo.length > 15 && (cleanSaved.includes(cleanIndo.slice(0, 30)) || cleanIndo.includes(cleanSaved.slice(0, 30)))) {
+            matched.push(cid);
+          } else if (cleanEn.length > 15 && (cleanSaved.includes(cleanEn.slice(0, 30)) || cleanEn.includes(cleanSaved.slice(0, 30)))) {
             matched.push(cid);
           }
         }
@@ -746,59 +905,108 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
         break;
       case 3:
         updatedData.chatgpt.main_answer = updatedText;
-        updatedData.english_translations.card_3 = updatedText;
+        delete updatedData.english_translations.card_3;
+        delete cardTranslationCacheRef.current.card_3;
         break;
       case 4:
         updatedData.chatgpt.concise_answer = updatedText;
-        updatedData.english_translations.card_4 = updatedText;
+        delete updatedData.english_translations.card_4;
+        delete cardTranslationCacheRef.current.card_4;
         break;
       case 5:
         updatedData.chatgpt.brief_analysis = updatedText;
-        updatedData.english_translations.card_5 = updatedText;
+        delete updatedData.english_translations.card_5;
+        delete cardTranslationCacheRef.current.card_5;
         break;
       case 8:
         updatedData.gemini.main_answer = updatedText;
-        updatedData.english_translations.card_8 = updatedText;
+        delete updatedData.english_translations.card_8;
+        delete cardTranslationCacheRef.current.card_8;
         break;
       case 9:
         updatedData.gemini.concise_answer = updatedText;
-        updatedData.english_translations.card_9 = updatedText;
+        delete updatedData.english_translations.card_9;
+        delete cardTranslationCacheRef.current.card_9;
         break;
       case 10:
         updatedData.gemini.brief_analysis = updatedText;
-        updatedData.english_translations.card_10 = updatedText;
+        delete updatedData.english_translations.card_10;
+        delete cardTranslationCacheRef.current.card_10;
         break;
       case 12:
         updatedData.chatgpt.monitoring_issues = updatedText;
+        delete updatedData.english_translations.card_12;
+        delete cardTranslationCacheRef.current.card_12;
         break;
       case 13:
         updatedData.chatgpt.resolution_recommendations = updatedText;
+        delete updatedData.english_translations.card_13;
+        delete cardTranslationCacheRef.current.card_13;
         break;
       case 14:
         updatedData.chatgpt.kemenko_role = updatedText;
+        delete updatedData.english_translations.card_14;
+        delete cardTranslationCacheRef.current.card_14;
         break;
       case 15:
         updatedData.chatgpt.field_monitoring_agenda = updatedText;
+        delete updatedData.english_translations.card_15;
+        delete cardTranslationCacheRef.current.card_15;
         break;
       case 20:
         updatedData.chatgpt.latest_news = updatedText;
+        delete updatedData.english_translations.card_20;
+        delete cardTranslationCacheRef.current.card_20;
         break;
       case 16:
         updatedData.gemini.monitoring_issues = updatedText;
+        delete updatedData.english_translations.card_16;
+        delete cardTranslationCacheRef.current.card_16;
         break;
       case 17:
         updatedData.gemini.resolution_recommendations = updatedText;
+        delete updatedData.english_translations.card_17;
+        delete cardTranslationCacheRef.current.card_17;
         break;
       case 18:
         updatedData.gemini.kemenko_role = updatedText;
+        delete updatedData.english_translations.card_18;
+        delete cardTranslationCacheRef.current.card_18;
         break;
       case 19:
         updatedData.gemini.field_monitoring_agenda = updatedText;
+        delete updatedData.english_translations.card_19;
+        delete cardTranslationCacheRef.current.card_19;
         break;
       case 21:
         updatedData.gemini.latest_news = updatedText;
+        delete updatedData.english_translations.card_21;
+        delete cardTranslationCacheRef.current.card_21;
         break;
     }
+
+    // Trigger instant background translation of the edited card so its English version stays in sync
+    fetch(`${API_BASE_URL}/api/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: updatedText.trim(),
+        target_lang: 'en',
+        source_lang: 'id'
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.translated_text) {
+        const tr = res.translated_text.trim();
+        cardTranslationCacheRef.current[`card_${cardId}`] = tr;
+        if (updatedData.english_translations) {
+          updatedData.english_translations[`card_${cardId}`] = tr;
+        }
+        onNewQuestionReceived?.({ ...updatedData });
+      }
+    })
+    .catch(() => {});
 
     onNewQuestionReceived?.(updatedData);
     setEditingCardId(null);
@@ -1105,7 +1313,7 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
                 className="live-search-input"
                 value={typedQuestion}
                 onChange={(e) => setTypedQuestion(e.target.value)}
-                placeholder={attachedFile ? `Tanyakan topik apa saja (lampiran "${attachedFile.name}" melengkapi jika relate)...` : ""}
+                placeholder=""
                 disabled={isProcessingLive}
               />
               <button
@@ -1502,10 +1710,10 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
             )}
           </HubAnimatedCard>
 
-          {/* Card 14 — PERAN Kemenko Polkam (ChatGPT) */}
+          {/* Card 14 — PERAN KEMENKOPOLKAM (ChatGPT) */}
           <HubAnimatedCard
             id="card-14"
-            title="Peran Kemenko Polkam"
+            title="Peran Kemenkopolkam"
             isSelectable
             isSelected={selectedCardIds.includes(14)}
             selectionNumber={getSelectionNumber(14)}
@@ -1928,10 +2136,10 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
             )}
           </HubAnimatedCard>
 
-          {/* Card 18 — PERAN Kemenko Polkam (Gemini) */}
+          {/* Card 18 — PERAN KEMENKOPOLKAM (Gemini) */}
           <HubAnimatedCard
             id="card-18"
-            title="Peran Kemenko Polkam"
+            title="Peran Kemenkopolkam"
             isSelectable
             isSelected={selectedCardIds.includes(18)}
             selectionNumber={getSelectionNumber(18)}
@@ -2187,7 +2395,7 @@ export const CardsGrid: React.FC<CardsGridProps> = ({
         }
       >
         <div className="min-h-[70px] select-text">
-          {isTranslatingSelected && selectedAnswerLang === 'en' && !translatedEnglishText && !combinedSelectedText ? (
+          {(isTranslatingSelected || (selectedAnswerLang === 'en' && (!currentCard11Text || isLikelyIndonesian(currentCard11Text)))) && combinedSelectedText ? (
             <div className="flex items-center gap-2 text-xs text-blue-600 font-medium py-3">
               <Loader2 size={15} className="animate-spin text-blue-600" />
               <span>Menerjemahkan ke Bahasa Inggris...</span>

@@ -8,6 +8,7 @@ import {
   Download,
   Upload,
   ArrowUpDown,
+  Trash2,
   Bold,
   Italic,
   Heading,
@@ -26,7 +27,8 @@ import {
   Code
 } from 'lucide-react';
 import type { SavedFile } from '../types';
-import { exportSingleSessionPdf, exportAllSessionsPdf } from '../utils/exportPdf';
+import type { User } from '../types/auth';
+import { exportSingleSessionPdf, exportAllSessionsPdf, resolveEnglishSelectedAnswer, isLikelyIndonesianText } from '../utils/exportPdf';
 import { HubAnimatedCard } from './ui/animated-card';
 import { API_BASE_URL } from '../config';
 
@@ -36,9 +38,11 @@ interface SavedFilesModalProps {
   files: SavedFile[];
   onLoadFile: (file: SavedFile) => void;
   onDeleteFile: (fileId: string) => Promise<void>;
+  onDeleteMultipleFiles?: (fileIds: string[]) => Promise<void>;
   onUpdateFile: (fileId: string, updatedData: Partial<SavedFile>) => Promise<void>;
   onNewFile?: () => void;
   onUploadToPrompter?: (files: SavedFile[]) => void;
+  currentUser?: User | null;
 }
 
 const LANGUAGE_OPTIONS = [
@@ -120,7 +124,7 @@ const CardEditItem: React.FC<CardEditItemProps> = ({
   value,
   onChange,
   minRows = 4,
-  placeholder,
+  placeholder: _placeholder,
   defaultTgtLang = 'en',
   badge,
   canSelect = false,
@@ -502,7 +506,7 @@ const CardEditItem: React.FC<CardEditItemProps> = ({
             }
           }}
           className="saved-white-card-editor"
-          data-placeholder={placeholder || 'Ketik catatan atau analisis di sini...'}
+          data-placeholder=""
           style={{ minHeight: `${(minRows || 4) * 24}px` }}
         />
       )}
@@ -516,14 +520,18 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
   files,
   onLoadFile: _onLoadFile,
   onDeleteFile,
+  onDeleteMultipleFiles,
   onUpdateFile,
   onNewFile: _onNewFile,
-  onUploadToPrompter
+  onUploadToPrompter,
+  currentUser
 }) => {
+  const isViewer = currentUser?.role === 'Viewer';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFileForView, setSelectedFileForView] = useState<SavedFile | null>(null);
   const [fileToEdit, setFileToEdit] = useState<SavedFile | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [isConfirmingBulkDelete, setIsConfirmingBulkDelete] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Edit form state
@@ -726,6 +734,10 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
   };
 
   const handleUploadSelectedToPrompter = () => {
+    if (isViewer) {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengunggah dokumen ke Prompter.");
+      return;
+    }
     const selectedFiles = sortedFiles.filter(f => selectedExportIds.has(f.id));
     if (selectedFiles.length === 0) return;
     if (onUploadToPrompter) {
@@ -733,8 +745,31 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (isViewer) {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) tidak diizinkan menghapus dokumen.");
+      setIsConfirmingBulkDelete(false);
+      return;
+    }
+    const idsToDelete = Array.from(selectedExportIds);
+    setIsConfirmingBulkDelete(false);
+    if (onDeleteMultipleFiles) {
+      await onDeleteMultipleFiles(idsToDelete);
+    } else {
+      for (const id of idsToDelete) {
+        await onDeleteFile(id);
+      }
+    }
+    setSelectedExportIds(new Set());
+  };
+
   // Multiple Choice helper for Card 11 (Jawaban Terpilih)
   const syncSelectedAnswer = (activeIds: string[], overrides?: Record<string, string>) => {
+    if (activeIds.length === 0) {
+      const defaultAns = fileToEdit?.selected_answer || fileToEdit?.chatgpt_answers?.main_answer || fileToEdit?.gemini_answers?.main_answer || fileToEdit?.ai_answers?.main_answer || '';
+      setEditSelectedAnswer(defaultAns);
+      return;
+    }
     const getVal = (id: string) => {
       if (overrides && id in overrides) return overrides[id];
       switch (id) {
@@ -794,12 +829,46 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
   };
 
   const handleOpenEdit = (f: SavedFile) => {
+    if (isViewer) {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan mengubah dokumen.");
+      return;
+    }
     setFileToEdit(f);
-    setSelectedCardIds([]);
     setUndoStack([]);
     setRedoStack([]);
     setEditTitle(f.title || '');
     setEditNotes(f.notes || '');
+
+    // Auto-detect previously chosen cards from saved selected_answer
+    const rawSaved = (f.selected_answer || '').toLowerCase().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const detectedIds: string[] = [];
+    const checkCandidates = [
+      { id: 'chatgpt-main', text: f.chatgpt_answers?.main_answer || f.ai_answers?.main_answer || '' },
+      { id: 'chatgpt-concise', text: f.chatgpt_answers?.concise_answer || f.ai_answers?.concise_answer || '' },
+      { id: 'chatgpt-analysis', text: f.chatgpt_answers?.brief_analysis || f.ai_answers?.brief_analysis || '' },
+      { id: 'chatgpt-monitoring', text: f.chatgpt_answers?.monitoring_issues || f.ai_answers?.monitoring_issues || '' },
+      { id: 'chatgpt-resolution', text: f.chatgpt_answers?.resolution_recommendations || f.ai_answers?.resolution_recommendations || '' },
+      { id: 'chatgpt-role', text: f.chatgpt_answers?.kemenko_role || f.ai_answers?.kemenko_role || '' },
+      { id: 'chatgpt-agenda', text: f.chatgpt_answers?.field_monitoring_agenda || f.ai_answers?.field_monitoring_agenda || '' },
+      { id: 'chatgpt-news', text: f.chatgpt_answers?.latest_news || f.ai_answers?.latest_news || '' },
+      { id: 'gemini-main', text: f.gemini_answers?.main_answer || f.ai_answers?.main_answer || '' },
+      { id: 'gemini-concise', text: f.gemini_answers?.concise_answer || f.ai_answers?.concise_answer || '' },
+      { id: 'gemini-analysis', text: f.gemini_answers?.brief_analysis || f.ai_answers?.brief_analysis || '' },
+      { id: 'gemini-monitoring', text: f.gemini_answers?.monitoring_issues || f.ai_answers?.monitoring_issues || '' },
+      { id: 'gemini-resolution', text: f.gemini_answers?.resolution_recommendations || f.ai_answers?.resolution_recommendations || '' },
+      { id: 'gemini-role', text: f.gemini_answers?.kemenko_role || f.ai_answers?.kemenko_role || '' },
+      { id: 'gemini-agenda', text: f.gemini_answers?.field_monitoring_agenda || f.ai_answers?.field_monitoring_agenda || '' },
+      { id: 'gemini-news', text: f.gemini_answers?.latest_news || f.ai_answers?.latest_news || '' }
+    ];
+    if (rawSaved) {
+      for (const cand of checkCandidates) {
+        const clean = cand.text.toLowerCase().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+        if (clean.length > 15 && (rawSaved.includes(clean.slice(0, 30)) || clean.includes(rawSaved.slice(0, 30)))) {
+          detectedIds.push(cand.id);
+        }
+      }
+    }
+    setSelectedCardIds(detectedIds);
 
     const questionTopic = f.translated_indonesian_text || f.original_audio_text || f.title || 'isu strategis kenegaraan';
 
@@ -822,7 +891,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
     setEditChatgptKemenkoRole(
       f.chatgpt_answers?.kemenko_role ||
       f.ai_answers?.kemenko_role ||
-      `Menko Polkam memimpin koordinasi lintas K/L terkait, mengawal kepatuhan instruksi Presiden, dan memastikan tidak ada hambatan birokrasi dalam implementasi kebijakan.`
+      `Dialogue AI Representative memimpin koordinasi lintas instansi terkait dan memastikan tidak ada hambatan birokrasi dalam implementasi kebijakan.`
     );
     setEditChatgptFieldAgenda(
       f.chatgpt_answers?.field_monitoring_agenda ||
@@ -854,12 +923,12 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
     setEditGeminiKemenkoRole(
       f.gemini_answers?.kemenko_role ||
       f.ai_answers?.kemenko_role ||
-      `Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis kenegaraan, menyatukan postur aparat penegak hukum dan pertahanan-keamanan nasional.`
+      `Menjalankan mandat sinkronisasi dan pengendalian kebijakan strategis Dialogue AI Representative, menyatukan postur aparat penegak hukum dan pertahanan-keamanan nasional.`
     );
     setEditGeminiFieldAgenda(
       f.gemini_answers?.field_monitoring_agenda ||
       f.ai_answers?.field_monitoring_agenda ||
-      `1. Aktivasi desk pemantauan terpadu 24/7 di bawah Deputi terkait Kemenko Polkam.\n2. Agenda peninjauan lapangan berkala dan evaluasi dampak komprehensif bersama Forkopimda.`
+      `1. Aktivasi desk pemantauan terpadu 24/7 di bawah Dialogue AI Representative.\n2. Agenda peninjauan lapangan berkala dan evaluasi dampak komprehensif bersama Forkopimda.`
     );
     setEditGeminiLatestNews(
       f.gemini_answers?.latest_news ||
@@ -919,6 +988,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
         { name: 'chatgpt-resolution', currentVal: editChatgptResolution, setter: setEditChatgptResolution },
         { name: 'chatgpt-role', currentVal: editChatgptKemenkoRole, setter: setEditChatgptKemenkoRole },
         { name: 'chatgpt-agenda', currentVal: editChatgptFieldAgenda, setter: setEditChatgptFieldAgenda },
+        { name: 'chatgpt-news', currentVal: editChatgptLatestNews, setter: setEditChatgptLatestNews },
         { name: 'gemini-trans', currentVal: editGeminiTranslated, setter: setEditGeminiTranslated },
         { name: 'gemini-main', currentVal: editGeminiMain, setter: setEditGeminiMain },
         { name: 'gemini-concise', currentVal: editGeminiConcise, setter: setEditGeminiConcise },
@@ -927,20 +997,30 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
         { name: 'gemini-resolution', currentVal: editGeminiResolution, setter: setEditGeminiResolution },
         { name: 'gemini-role', currentVal: editGeminiKemenkoRole, setter: setEditGeminiKemenkoRole },
         { name: 'gemini-agenda', currentVal: editGeminiFieldAgenda, setter: setEditGeminiFieldAgenda },
+        { name: 'gemini-news', currentVal: editGeminiLatestNews, setter: setEditGeminiLatestNews },
         { name: 'selected-answer', currentVal: editSelectedAnswer, setter: setEditSelectedAnswer },
       ];
 
       const activeItems = targetItems.filter(item => item.currentVal && item.currentVal.trim().length > 0);
       let done = 0;
+      const translatedMap: Record<string, string> = {};
 
       await Promise.all(
         activeItems.map(async (item) => {
           const res = await translateText(item.currentVal);
+          translatedMap[item.name] = res;
           item.setter(res);
           done++;
           setTranslateAllProgress(`${done}/${activeItems.length}`);
         })
       );
+
+      // If user has cards selected in Card 11 (Jawaban Terpilih), synchronize Jawaban Terpilih from the freshly translated cards!
+      if (selectedCardIds.length > 0) {
+        syncSelectedAnswer(selectedCardIds, translatedMap);
+      } else if (translatedMap['selected-answer']) {
+        setEditSelectedAnswer(translatedMap['selected-answer']);
+      }
     } finally {
       setIsTranslatingAll(false);
       setTranslateAllProgress('');
@@ -949,6 +1029,10 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
 
   const handleSaveEditSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isViewer) {
+      alert("Akses Ditolak: Peran Pengamat (Viewer) tidak diizinkan mengubah dokumen arsip negara.");
+      return;
+    }
     if (!fileToEdit) return;
     setIsSavingEdit(true);
     try {
@@ -997,7 +1081,12 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
           latest_news: editGeminiLatestNews.trim(),
           model_version: 'Gemini'
         },
-        selected_answer: chosenAns
+        selected_answer: chosenAns,
+        selected_answer_en: !isLikelyIndonesianText(chosenAns) && chosenAns ? chosenAns : (fileToEdit.selected_answer_en || chosenAns),
+        english_translations: {
+          ...(fileToEdit.english_translations || {}),
+          ...(!isLikelyIndonesianText(chosenAns) && chosenAns ? { card_11: chosenAns, selected_answer: chosenAns } : {})
+        }
       });
       setFileToEdit(null);
     } finally {
@@ -1017,6 +1106,12 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isViewer && (
+              <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700 flex items-center gap-1.5" title="Akses Pengamat: Hanya diperbolehkan membaca data dan preview/export PDF.">
+                <Eye size={12} className="text-blue-400" />
+                Mode Pengamat (Read-Only)
+              </span>
+            )}
             <button
               type="button"
               className="saved-close-btn"
@@ -1099,6 +1194,19 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
               <span>Upload ke Prompter {selectedExportIds.size > 0 ? `(${selectedExportIds.size})` : ''}</span>
             </button>
 
+            {!isViewer && selectedExportIds.size > 0 && (
+              <button
+                type="button"
+                className="saved-action-btn flex items-center gap-1.5 font-bold"
+                style={{ color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.45)', background: 'rgba(239, 68, 68, 0.12)' }}
+                onClick={() => setIsConfirmingBulkDelete(true)}
+                title={`Hapus ${selectedExportIds.size} pertanyaan terpilih`}
+              >
+                <Trash2 size={13} className="text-red-400 shrink-0" />
+                <span>Hapus Terpilih ({selectedExportIds.size})</span>
+              </button>
+            )}
+
             {selectedExportIds.size > 0 && (
               <button
                 type="button"
@@ -1140,6 +1248,17 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
+                  {sortedFiles.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12 text-zinc-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <span className="text-3xl">📋</span>
+                          <span className="font-semibold text-zinc-300">Daftar Pertanyaan Kosong</span>
+                          <span className="text-xs text-zinc-500">Semua riwayat pertanyaan telah dihapus. Data baru akan otomatis tersimpan saat sesi analisis baru dimulai.</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {sortedFiles.map((file, idx) => {
                     const isSelected = selectedExportIds.has(file.id);
                     const chosenText = file.selected_answer || file.ai_answers?.main_answer || file.chatgpt_answers?.main_answer || file.gemini_answers?.main_answer || '';
@@ -1199,23 +1318,27 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                               View
                             </button>
 
-                            <button
-                              type="button"
-                              className="saved-action-btn"
-                              onClick={() => handleOpenEdit(file)}
-                              title="Edit Dokumen & Jawaban (Edit)"
-                            >
-                              Edit
-                            </button>
+                            {!isViewer && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="saved-action-btn"
+                                  onClick={() => handleOpenEdit(file)}
+                                  title="Edit Dokumen & Jawaban (Edit)"
+                                >
+                                  Edit
+                                </button>
 
-                            <button
-                              type="button"
-                              className="saved-action-btn"
-                              onClick={() => setIsDeletingId(file.id)}
-                              title="Hapus Dokumen (Delete)"
-                            >
-                              Delete
-                            </button>
+                                <button
+                                  type="button"
+                                  className="saved-action-btn"
+                                  onClick={() => setIsDeletingId(file.id)}
+                                  title="Hapus Dokumen (Delete)"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1227,7 +1350,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
         </div>
 
         {/* Delete Confirmation Modal */}
-        {isDeletingId && (
+        {isDeletingId && !isViewer && (
           <div className="saved-submodal-overlay">
             <div className="saved-submodal-card">
               <h3 className="text-sm font-bold text-white mb-4">Konfirmasi Hapus?</h3>
@@ -1243,12 +1366,45 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                   type="button"
                   className="saved-danger-btn"
                   onClick={async () => {
+                    if (isViewer) {
+                      alert("Akses Ditolak: Peran Pengamat (Viewer) tidak diizinkan menghapus dokumen.");
+                      setIsDeletingId(null);
+                      return;
+                    }
                     const id = isDeletingId;
                     setIsDeletingId(null);
                     await onDeleteFile(id);
                   }}
                 >
                   Hapus Berkas
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Delete Confirmation Modal */}
+        {isConfirmingBulkDelete && !isViewer && (
+          <div className="saved-submodal-overlay">
+            <div className="saved-submodal-card">
+              <h3 className="text-sm font-bold text-white mb-2">Hapus {selectedExportIds.size} Pertanyaan Terpilih?</h3>
+              <p className="text-xs text-zinc-400 mb-4">
+                Dokumen terpilih akan dihapus permanen dari basis data arsip dan tidak akan muncul kembali.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="saved-cancel-btn"
+                  onClick={() => setIsConfirmingBulkDelete(false)}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="saved-danger-btn"
+                  onClick={handleBulkDelete}
+                >
+                  Hapus ({selectedExportIds.size}) Dokumen
                 </button>
               </div>
             </div>
@@ -1291,69 +1447,28 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
             {/* Scrollable Document Container */}
             <div className="pdf-preview-body">
               <div className="pdf-preview-sheet">
-                {/* 1. Official Header Banner */}
+                {/* 1. Official Header Banner (Dialogue AI Representative saja) */}
                 <div className="pdf-header-banner">
                   <span className="text-xs font-black tracking-wider uppercase text-white">
-                    KEMENTERIAN KOORDINATOR BIDANG POLITIK DAN KEAMANAN RI
-                  </span>
-                  <span className="text-[10.5px] font-normal tracking-wide text-slate-300">
-                    MENKOPOLKAM AI HUB - DOKUMEN ARSIP RESMI SESI DIPLOMASI
+                    DIALOGUE AI REPRESENTATIVE
                   </span>
                 </div>
 
-                {/* 2. Document Title */}
-                <div>
-                  <h1 className="text-xl font-black text-slate-900 leading-snug tracking-tight">
-                    {selectedFileForView.title || 'Dokumen Sesi Tanpa Judul'}
-                  </h1>
-                </div>
-
-                {/* 3. Metadata Table Box */}
-                <div className="pdf-meta-box">
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex gap-2">
-                      <span className="font-bold text-slate-500 w-36">ID DOKUMEN:</span>
-                      <span className="font-semibold text-slate-900">{selectedFileForView.id || '-'}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="font-bold text-slate-500 w-36">WAKTU / SESI:</span>
-                      <span className="text-slate-800">{selectedFileForView.timestamp || '-'}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="font-bold text-slate-500 w-36">PENANYA / DELEGASI:</span>
-                      <span className="text-slate-800">{selectedFileForView.speaker || 'Delegasi / Penanya'}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex gap-2">
-                      <span className="font-bold text-slate-500 w-32">BAHASA ASLI:</span>
-                      <span className="font-semibold text-slate-900">
-                        {selectedFileForView.detected_language_name || selectedFileForView.detected_language || 'Otomatis'}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="font-bold text-slate-500 w-32">TANGGAL ARSIP:</span>
-                      <span className="text-slate-800">{selectedFileForView.updated_at || selectedFileForView.created_at || '-'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Document Sections matching PDF export */}
-                {/* Section 1: Tangkapan Suara Asing */}
+                {/* 4. Document Sections matching on-point official titles */}
+                {/* Section 1: Pertanyaan Asli */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    1. TANGKAPAN SUARA ASING (STT ORIGINAL)
+                    Pertanyaan Asli
                   </div>
                   <div className="pdf-section-content italic font-medium text-slate-700 bg-slate-50/60 p-3 rounded border border-slate-100">
                     "{selectedFileForView.original_audio_text || '-'}"
                   </div>
                 </div>
 
-                {/* Section 2: Terjemahan Indonesia 100% */}
+                {/* Section 2: Terjemahan Bahasa Indonesia */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    2. HASIL TRANSLATE BAHASA INDONESIA (100% TERJEMAHAN)
+                    Terjemahan Bahasa Indonesia
                   </div>
                   <div className="pdf-section-content font-semibold text-slate-900 bg-slate-50/60 p-3 rounded border border-slate-100">
                     "{selectedFileForView.translated_indonesian_text || '-'}"
@@ -1363,15 +1478,17 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 3: Jawaban Utama */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    3. GENERATE AI - JAWABAN UTAMA
+                    Jawaban Utama
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.main_answer ||
-                       selectedFileForView.selected_answer ||
-                       selectedFileForView.chatgpt_answers?.main_answer ||
-                       selectedFileForView.gemini_answers?.main_answer ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.main_answer && selectedFileForView.gemini_answers?.main_answer && selectedFileForView.chatgpt_answers.main_answer !== selectedFileForView.gemini_answers.main_answer
+                        ? `${selectedFileForView.chatgpt_answers.main_answer}\n\n${selectedFileForView.gemini_answers.main_answer}`
+                        : (selectedFileForView.ai_answers?.main_answer ||
+                           selectedFileForView.selected_answer ||
+                           selectedFileForView.chatgpt_answers?.main_answer ||
+                           selectedFileForView.gemini_answers?.main_answer ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1379,29 +1496,33 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 4: Jawaban Singkat */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    4. GENERATE AI - JAWABAN SINGKAT
+                    Jawaban Singkat
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.concise_answer ||
-                       selectedFileForView.chatgpt_answers?.concise_answer ||
-                       selectedFileForView.gemini_answers?.concise_answer ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.concise_answer && selectedFileForView.gemini_answers?.concise_answer && selectedFileForView.chatgpt_answers.concise_answer !== selectedFileForView.gemini_answers.concise_answer
+                        ? `${selectedFileForView.chatgpt_answers.concise_answer}\n\n${selectedFileForView.gemini_answers.concise_answer}`
+                        : (selectedFileForView.ai_answers?.concise_answer ||
+                           selectedFileForView.chatgpt_answers?.concise_answer ||
+                           selectedFileForView.gemini_answers?.concise_answer ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
 
-                {/* Section 5: Analisis Strategis */}
+                {/* Section 5: Analisis */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    5. GENERATE AI - JAWABAN ANALISIS STRATEGIS
+                    Analisis
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.brief_analysis ||
-                       selectedFileForView.chatgpt_answers?.brief_analysis ||
-                       selectedFileForView.gemini_answers?.brief_analysis ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.brief_analysis && selectedFileForView.gemini_answers?.brief_analysis && selectedFileForView.chatgpt_answers.brief_analysis !== selectedFileForView.gemini_answers.brief_analysis
+                        ? `${selectedFileForView.chatgpt_answers.brief_analysis}\n\n${selectedFileForView.gemini_answers.brief_analysis}`
+                        : (selectedFileForView.ai_answers?.brief_analysis ||
+                           selectedFileForView.chatgpt_answers?.brief_analysis ||
+                           selectedFileForView.gemini_answers?.brief_analysis ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1409,14 +1530,16 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 6: Masalah dan Hasil Pemantauan */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    6. GENERATE AI - MASALAH DAN HASIL PEMANTAUAN
+                    Masalah dan Hasil Pemantauan
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.monitoring_issues ||
-                       selectedFileForView.chatgpt_answers?.monitoring_issues ||
-                       selectedFileForView.gemini_answers?.monitoring_issues ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.monitoring_issues && selectedFileForView.gemini_answers?.monitoring_issues && selectedFileForView.chatgpt_answers.monitoring_issues !== selectedFileForView.gemini_answers.monitoring_issues
+                        ? `${selectedFileForView.chatgpt_answers.monitoring_issues}\n\n${selectedFileForView.gemini_answers.monitoring_issues}`
+                        : (selectedFileForView.ai_answers?.monitoring_issues ||
+                           selectedFileForView.chatgpt_answers?.monitoring_issues ||
+                           selectedFileForView.gemini_answers?.monitoring_issues ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1424,29 +1547,33 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 7: Rekomendasi Penyelesaian */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    7. GENERATE AI - REKOMENDASI PENYELESAIAN
+                    Rekomendasi Penyelesaian
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.resolution_recommendations ||
-                       selectedFileForView.chatgpt_answers?.resolution_recommendations ||
-                       selectedFileForView.gemini_answers?.resolution_recommendations ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.resolution_recommendations && selectedFileForView.gemini_answers?.resolution_recommendations && selectedFileForView.chatgpt_answers.resolution_recommendations !== selectedFileForView.gemini_answers.resolution_recommendations
+                        ? `${selectedFileForView.chatgpt_answers.resolution_recommendations}\n\n${selectedFileForView.gemini_answers.resolution_recommendations}`
+                        : (selectedFileForView.ai_answers?.resolution_recommendations ||
+                           selectedFileForView.chatgpt_answers?.resolution_recommendations ||
+                           selectedFileForView.gemini_answers?.resolution_recommendations ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
 
-                {/* Section 8: Peran Kemenko Polkam */}
+                {/* Section 8: Peran Kemenkopolkam */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    8. GENERATE AI - PERAN KEMENKO POLKAM
+                    Peran Kemenkopolkam
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.kemenko_role ||
-                       selectedFileForView.chatgpt_answers?.kemenko_role ||
-                       selectedFileForView.gemini_answers?.kemenko_role ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.kemenko_role && selectedFileForView.gemini_answers?.kemenko_role && selectedFileForView.chatgpt_answers.kemenko_role !== selectedFileForView.gemini_answers.kemenko_role
+                        ? `${selectedFileForView.chatgpt_answers.kemenko_role}\n\n${selectedFileForView.gemini_answers.kemenko_role}`
+                        : (selectedFileForView.ai_answers?.kemenko_role ||
+                           selectedFileForView.chatgpt_answers?.kemenko_role ||
+                           selectedFileForView.gemini_answers?.kemenko_role ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1454,14 +1581,16 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 9: Usulan Agenda Pemantauan Lapangan */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    9. GENERATE AI - USULAN AGENDA PEMANTAUAN LAPANGAN
+                    Usulan Agenda Pemantauan Lapangan
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.field_monitoring_agenda ||
-                       selectedFileForView.chatgpt_answers?.field_monitoring_agenda ||
-                       selectedFileForView.gemini_answers?.field_monitoring_agenda ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.field_monitoring_agenda && selectedFileForView.gemini_answers?.field_monitoring_agenda && selectedFileForView.chatgpt_answers.field_monitoring_agenda !== selectedFileForView.gemini_answers.field_monitoring_agenda
+                        ? `${selectedFileForView.chatgpt_answers.field_monitoring_agenda}\n\n${selectedFileForView.gemini_answers.field_monitoring_agenda}`
+                        : (selectedFileForView.ai_answers?.field_monitoring_agenda ||
+                           selectedFileForView.chatgpt_answers?.field_monitoring_agenda ||
+                           selectedFileForView.gemini_answers?.field_monitoring_agenda ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1469,14 +1598,16 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 10: Berita Terbaru */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    10. GENERATE AI - BERITA TERBARU
+                    Berita Terbaru
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-800 leading-relaxed">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.ai_answers?.latest_news ||
-                       selectedFileForView.chatgpt_answers?.latest_news ||
-                       selectedFileForView.gemini_answers?.latest_news ||
-                       '-'}
+                      {selectedFileForView.chatgpt_answers?.latest_news && selectedFileForView.gemini_answers?.latest_news && selectedFileForView.chatgpt_answers.latest_news !== selectedFileForView.gemini_answers.latest_news
+                        ? `${selectedFileForView.chatgpt_answers.latest_news}\n\n${selectedFileForView.gemini_answers.latest_news}`
+                        : (selectedFileForView.ai_answers?.latest_news ||
+                           selectedFileForView.chatgpt_answers?.latest_news ||
+                           selectedFileForView.gemini_answers?.latest_news ||
+                           '-')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -1484,23 +1615,39 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* Section 11: Jawaban Terpilih */}
                 <div className="pdf-section-block">
                   <div className="pdf-section-title">
-                    11. JAWABAN TERPILIH
+                    Jawaban Terpilih
                   </div>
                   <div className="pdf-section-content prose-rich-text text-slate-900 font-medium leading-relaxed bg-blue-50/50 p-3 rounded border border-blue-100">
                     <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                      {selectedFileForView.selected_answer ||
-                       selectedFileForView.ai_answers?.main_answer ||
-                       selectedFileForView.chatgpt_answers?.main_answer ||
-                       '-'}
+                      {resolveEnglishSelectedAnswer(selectedFileForView)}
                     </ReactMarkdown>
                   </div>
                 </div>
+
+                {/* Optional: Rujukan Bahasa Indonesia (hanya jika pilihan asli bahasa Indonesia dan berbeda dari versi Inggris) */}
+                {Boolean(
+                  selectedFileForView.selected_answer &&
+                  selectedFileForView.selected_answer.trim() &&
+                  isLikelyIndonesianText(selectedFileForView.selected_answer) &&
+                  selectedFileForView.selected_answer.trim() !== resolveEnglishSelectedAnswer(selectedFileForView).trim()
+                ) && (
+                  <div className="pdf-section-block">
+                    <div className="pdf-section-title">
+                      Rujukan Jawaban Terpilih (Bahasa Indonesia)
+                    </div>
+                    <div className="pdf-section-content prose-rich-text italic text-slate-700 bg-slate-50/70 p-3 rounded border border-slate-100">
+                      <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                        {selectedFileForView.selected_answer}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                )}
 
                 {/* Optional: Catatan Khusus */}
                 {selectedFileForView.notes && (
                   <div className="pdf-section-block">
                     <div className="pdf-section-title">
-                      CATATAN KHUSUS OPERATOR
+                      Catatan
                     </div>
                     <div className="pdf-section-content italic text-slate-700 bg-amber-50/50 p-3 rounded border border-amber-100">
                       {selectedFileForView.notes}
@@ -1511,7 +1658,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 {/* 5. Document Footer */}
                 <div className="mt-6 pt-4 border-t border-slate-200 text-center">
                   <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    Dokumen Resmi Terarsip - Kementerian Koordinator Bidang Politik dan Keamanan Republik Indonesia
+                    Dokumen Resmi Terarsip - Dialogue AI Representative
                   </p>
                 </div>
               </div>
@@ -1530,7 +1677,7 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 </h2>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="saved-edit-header-actions">
                 {/* Tombol Undo & Redo Dokumen (Di sebelah kiri translate, tanpa tulisan) */}
                 <div className="flex items-center gap-1 mr-1">
                   <button
@@ -1621,8 +1768,8 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
 
             {/* Fullscreen Workspace Body */}
             <form onSubmit={handleSaveEditSubmit} className="saved-edit-fullscreen-body">
-              {/* Row 1: Judul & Catatan Khusus */}
-              <div className="cards-columns-grid">
+              {/* Row 1: Judul Dokumen */}
+              <div className="w-full mb-1">
                 <HubAnimatedCard
                   id="edit-card-title"
                   title="Judul"
@@ -1635,20 +1782,6 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                     className="saved-white-card-input font-bold"
                     placeholder=""
                     required
-                  />
-                </HubAnimatedCard>
-
-                <HubAnimatedCard
-                  id="edit-card-notes"
-                  title="Catatan Khusus Dokumen / Arahan"
-                  className="w-full"
-                >
-                  <input
-                    type="text"
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    className="saved-white-card-input"
-                    placeholder=""
                   />
                 </HubAnimatedCard>
               </div>
@@ -1762,10 +1895,10 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                     onToggleSelect={toggleCardChoice}
                   />
 
-                  {/* Card 14 — Peran Kemenko Polkam */}
+                  {/* Card 14 — Peran Kemenkopolkam */}
                   <CardEditItem
                     id="chatgpt-role"
-                    title="Peran Kemenko Polkam"
+                    title="Peran Kemenkopolkam"
                     value={editChatgptKemenkoRole}
                     onChange={(val) => handleCardValueChange('chatgpt-role', val, setEditChatgptKemenkoRole)}
                     minRows={5}
@@ -1915,10 +2048,10 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                     onToggleSelect={toggleCardChoice}
                   />
 
-                  {/* Card 18 — Peran Kemenko Polkam */}
+                  {/* Card 18 — Peran Kemenkopolkam */}
                   <CardEditItem
                     id="gemini-role"
-                    title="Peran Kemenko Polkam"
+                    title="Peran Kemenkopolkam"
                     value={editGeminiKemenkoRole}
                     onChange={(val) => handleCardValueChange('gemini-role', val, setEditGeminiKemenkoRole)}
                     minRows={5}
@@ -1979,7 +2112,8 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                         type="button"
                         onClick={() => {
                           setSelectedCardIds([]);
-                          setEditSelectedAnswer('');
+                          const defaultAns = fileToEdit?.selected_answer || fileToEdit?.chatgpt_answers?.main_answer || fileToEdit?.gemini_answers?.main_answer || fileToEdit?.ai_answers?.main_answer || '';
+                          setEditSelectedAnswer(defaultAns);
                         }}
                         className="saved-chosen-reset-btn"
                         title="Hapus semua pilihan kotak"
@@ -1991,9 +2125,23 @@ export const SavedFilesModal: React.FC<SavedFilesModalProps> = ({
                 />
               </div>
 
+              {/* BOTTOM — CARD CATATAN (HANYA DIISI DI MENU EDIT) */}
+              <div className="w-full mt-2">
+                <CardEditItem
+                  id="notes"
+                  title="Catatan"
+                  value={editNotes}
+                  onChange={(val) => handleCardValueChange('notes', val, setEditNotes)}
+                  minRows={4}
+                  placeholder=""
+                  defaultTgtLang="en"
+                  canSelect={false}
+                />
+              </div>
+
               {/* Bottom Actions Bar */}
-              <div className="flex items-center justify-end pt-3 border-t border-zinc-800 mt-2">
-                <div className="flex gap-2">
+              <div className="saved-edit-bottom-bar">
+                <div className="saved-edit-bottom-actions">
                   <button
                     type="button"
                     className="saved-cancel-btn"

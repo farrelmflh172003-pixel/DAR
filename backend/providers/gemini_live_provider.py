@@ -36,11 +36,11 @@ class GeminiLiveProvider(BaseRealtimeProvider):
         self._is_cancelled = False
         self._buffered_pcm_bytes = bytearray()
         self.system_instruction = ""
-        self.voice = "Kore"
+        self.voice = "Aoede"
 
-    async def connect(self, system_instruction: str = "", voice: str = "Kore") -> bool:
+    async def connect(self, system_instruction: str = "", voice: str = "Aoede") -> bool:
         self.system_instruction = system_instruction
-        self.voice = voice or "Kore"
+        self.voice = voice or "Aoede"
         self._is_cancelled = False
         self._buffered_pcm_bytes.clear()
         self.set_status("connecting", "Initializing Gemini Live connection...")

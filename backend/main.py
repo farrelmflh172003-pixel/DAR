@@ -48,10 +48,11 @@ from services.document_parser import extract_text_from_file_bytes
 from services.captcha_service import captcha_service
 from services.user_service import user_service
 from services.saved_file_service import saved_file_service
+from services.prompter_service import prompter_service
 
 
 app = FastAPI(
-    title="MENKOPOLKAM AI HUB API",
+    title="Dialogue AI Representative API",
     description="Universal AI Translator and Analytical Engine",
     version="2.0.0"
 )
@@ -143,7 +144,7 @@ class KeyUpdateRequest(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
-    voice: Optional[str] = "Kore"
+    voice: Optional[str] = "Aoede"
 
 class DocumentExtractRequest(BaseModel):
     filename: str
@@ -151,6 +152,15 @@ class DocumentExtractRequest(BaseModel):
 
 class TicketRequest(BaseModel):
     token: Optional[str] = None
+
+class BulkDeleteSavedFilesRequest(BaseModel):
+    ids: List[str]
+
+class ReorderPrompterRequest(BaseModel):
+    ids: List[str]
+
+class UpdatePrompterTextRequest(BaseModel):
+    text: str
 
 @app.post("/api/auth/ticket")
 async def create_connection_ticket(request: Request, payload: Optional[TicketRequest] = None):
@@ -240,7 +250,29 @@ async def health_check():
     }
 
 @app.post("/api/settings/keys")
-async def update_api_keys(payload: KeyUpdateRequest):
+async def update_api_keys(payload: KeyUpdateRequest, request: Request):
+    """
+    Updates system AI API keys.
+    Requires Admin or Superadmin authorization to prevent tampering.
+    """
+    auth_header = request.headers.get("authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+
+    if settings.AUTH_ENABLED or settings.ENV in ("staging", "production") or not settings.ALLOW_ANONYMOUS_DEV or token:
+        if not token:
+            raise HTTPException(status_code=401, detail="Autentikasi Bearer token Admin/Superadmin diperlukan.")
+        try:
+            claims = verify_access_token(token)
+            role = (claims.get("role") or "").lower()
+            if role not in ("admin", "superadmin"):
+                raise HTTPException(status_code=403, detail="Akses Ditolak: Hanya Administrator atau Superadmin yang berwenang mengubah kunci API sistem.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Token otorisasi tidak valid: {str(e)}")
+
     if payload.openai_api_key is not None:
         settings.OPENAI_API_KEY = payload.openai_api_key.strip()
     if payload.gemini_api_key is not None:
@@ -273,6 +305,46 @@ async def list_scenarios():
         ]
     }
 
+def verify_saved_file_write_permission(request: Request, action: str = "memodifikasi") -> Dict[str, Any]:
+    """
+    Strict server-side RBAC enforcement for government archived files.
+    Eliminates client-side bypass vulnerabilities via browser DevTools / Inspect.
+    - Rejects unauthenticated mutating requests in protected environments (401).
+    - Strictly blocks 'Viewer' role from creating, updating, or deleting files (403).
+    """
+    auth_header = request.headers.get("authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+
+    if token:
+        try:
+            claims = verify_access_token(token)
+            role = (claims.get("role") or "").lower()
+            if role in ("viewer", "pengamat", "guest"):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Akses Ditolak: Peran Pengamat (Viewer) hanya memiliki hak akses pantau (Read-Only). Anda tidak diizinkan untuk {action} dokumen arsip negara."
+                )
+            return claims
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=401,
+                detail=f"Token autentikasi tidak valid atau telah kedaluwarsa: {str(e)}"
+            )
+
+    # If no token provided: check if protected mode is active
+    if settings.AUTH_ENABLED or settings.ENV in ("staging", "production") or not settings.ALLOW_ANONYMOUS_DEV:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Autentikasi Bearer token resmi diperlukan untuk {action} arsip dokumen."
+        )
+
+    # In local testing / development mode without token, grant default dev operator
+    return {"sub": "dev-anonymous", "role": "operator"}
+
 @app.get("/api/saved-files")
 async def list_saved_files(sort_order: str = "newest_first"):
     """Lists all saved, listed, and documented session files. Defaults to newest first."""
@@ -287,25 +359,88 @@ async def get_saved_file(file_id: str):
     return f
 
 @app.post("/api/saved-files")
-async def save_session_file(payload: Dict[str, Any]):
-    """Saves a new session file into the documented archive."""
+async def save_session_file(payload: Dict[str, Any], request: Request):
+    """Saves a new session file into the documented archive. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="membuat")
     return saved_file_service.create_file(payload)
 
 @app.put("/api/saved-files/{file_id}")
-async def update_saved_file(file_id: str, payload: Dict[str, Any]):
-    """Edits and updates an existing saved file."""
+async def update_saved_file(file_id: str, payload: Dict[str, Any], request: Request):
+    """Edits and updates an existing saved file. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="mengubah")
     updated = saved_file_service.update_file(file_id, payload)
     if not updated:
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
     return updated
 
 @app.delete("/api/saved-files/{file_id}")
-async def delete_saved_file(file_id: str):
-    """Deletes a saved file from the archive."""
+async def delete_saved_file(file_id: str, request: Request):
+    """Deletes a saved file from the archive. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="menghapus")
     success = saved_file_service.delete_file(file_id)
     if not success:
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
     return {"status": "success", "message": "Dokumen berhasil dihapus"}
+
+@app.post("/api/saved-files/bulk-delete")
+async def bulk_delete_saved_files(payload: BulkDeleteSavedFilesRequest, request: Request):
+    """Bulk deletes saved files by list of IDs. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="menghapus dokumen terpilih")
+    count = saved_file_service.delete_files(payload.ids)
+    return {"status": "success", "deleted_count": count, "message": f"{count} dokumen berhasil dihapus"}
+
+@app.delete("/api/saved-files")
+async def clear_all_saved_files(request: Request):
+    """Clears all saved files from archive. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="menghapus seluruh dokumen")
+    count = saved_file_service.clear_all()
+    return {"status": "success", "deleted_count": count, "message": f"Seluruh ({count}) dokumen berhasil dihapus"}
+
+# ============================================================================
+# TELEPROMPTER QUEUE PERSISTENCE & RBAC
+# ============================================================================
+
+@app.get("/api/prompter/queue")
+async def list_prompter_queue():
+    """Lists all queued documents in the teleprompter. Persisted in database."""
+    return prompter_service.list_queue()
+
+@app.post("/api/prompter/queue")
+async def save_prompter_document(payload: Dict[str, Any], request: Request):
+    """Adds or updates a document in the prompter queue. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="menambah dokumen naskah prompter")
+    return prompter_service.add_or_update_item(payload)
+
+@app.put("/api/prompter/queue/reorder")
+async def reorder_prompter_queue(payload: ReorderPrompterRequest, request: Request):
+    """Reorders prompter queue documents. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="mengubah urutan dokumen prompter")
+    return prompter_service.reorder_queue(payload.ids)
+
+@app.put("/api/prompter/queue/{doc_id}")
+async def update_prompter_document_text(doc_id: str, payload: UpdatePrompterTextRequest, request: Request):
+    """Updates the text of a queued prompter document. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="mengedit teks naskah prompter")
+    updated = prompter_service.update_item_text(doc_id, payload.text)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Dokumen prompter tidak ditemukan")
+    return updated
+
+@app.delete("/api/prompter/queue/{doc_id}")
+async def delete_prompter_document(doc_id: str, request: Request):
+    """Deletes a document from the prompter queue. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="menghapus dokumen naskah prompter")
+    success = prompter_service.delete_item(doc_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Dokumen prompter tidak ditemukan")
+    return {"status": "success", "message": "Dokumen prompter berhasil dihapus"}
+
+@app.delete("/api/prompter/queue")
+async def clear_prompter_queue(request: Request):
+    """Clears all documents from the prompter queue. Protected by RBAC."""
+    verify_saved_file_write_permission(request, action="mengosongkan seluruh antrean prompter")
+    count = prompter_service.clear_queue()
+    return {"status": "success", "deleted_count": count, "message": f"Seluruh ({count}) dokumen prompter berhasil dikosongkan"}
 
 @app.get("/api/session/{scenario_id}", response_model=DiplomaticResponseSet)
 async def get_session(scenario_id: str):
@@ -353,7 +488,7 @@ async def get_session(scenario_id: str):
             canonical_translation_id=sf.get("translated_indonesian_text", ""),
             chatgpt=c_bundle,
             gemini=g_bundle,
-            english_translations={},
+            english_translations=sf.get("english_translations", {}),
             is_live_grounded=True,
             live_sources=[],
             latest_update_time=sf.get("timestamp", ""),
@@ -453,6 +588,8 @@ async def process_question(payload: ProcessRequest):
                 "model_version": "Gemini"
             },
             "selected_answer": chatgpt_bundle.main_answer or gemini_bundle.main_answer,
+            "selected_answer_en": (english_translations.get("card_11") or english_translations.get("card_3") or english_translations.get("card_8") or "").strip(),
+            "english_translations": english_translations,
             "notes": "Sesi transkripsi otomatis tercatat secara live."
         })
     except Exception as e:
@@ -511,7 +648,7 @@ async def translate_selection(payload: SelectAnswerRequest):
 
 @app.post("/api/tts")
 async def text_to_speech(payload: TTSRequest):
-    wav = await generate_gemini_tts(payload.text, payload.voice or "Kore")
+    wav = await generate_gemini_tts(payload.text, payload.voice or "Aoede")
     if not wav:
         raise HTTPException(status_code=500, detail="Gagal mensintesis suara Gemini TTS")
     return Response(content=wav, media_type="audio/wav")
@@ -786,7 +923,7 @@ async def realtime_voice_session_endpoint(websocket: WebSocket):
     register_provider_callbacks(provider)
 
     sys_instruction = (
-        "Anda adalah asisten suara analitikal diplomasi & kebijakan MENKOPOLKAM AI HUB. "
+        "Anda adalah asisten suara analitikal diplomasi & kebijakan Dialogue AI Representative. "
         "Berikan respon langsung, tajam, faktual, tanpa basa-basi sama sekali. "
         "Jawab dalam bahasa yang sama dengan pengguna (Indonesia atau English)."
     )
@@ -985,16 +1122,18 @@ async def login(req: LoginRequest):
             detail="Username atau password salah."
         )
 
-    # 3. Create Access Token
+    # 3. Create Access Token (Default 4 jam = 14400 detik)
     token = create_access_token(
         sub=user["username"],
-        role=user["role"]
+        role=user["role"],
+        expires_delta_seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS
     )
 
     return JSONResponse(content={
         "status": "success",
         "token": token,
-        "user": user
+        "user": user,
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_SECONDS
     })
 
 @app.get("/api/auth/me")

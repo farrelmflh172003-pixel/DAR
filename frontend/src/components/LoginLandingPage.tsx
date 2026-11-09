@@ -83,14 +83,12 @@ export const LoginLandingPage: React.FC<LoginLandingPageProps> = ({ onLoginSucce
         {/* Logo & Identitas Resmi */}
         <div className="login-minimal-brand">
           <img
-            src="/Kemenkopolkam.webp"
-            alt="Lambang Resmi Kemenko Polkam RI"
+            src="/logo.png"
+            alt="Dialogue AI Representative"
             className="login-minimal-logo"
           />
           <div className="login-minimal-institution">
-            <span className="inst-sub">KEMENTERIAN KOORDINATOR</span>
-            <h1 className="inst-main">BIDANG POLITIK DAN KEAMANAN</h1>
-            <span className="inst-country">REPUBLIK INDONESIA</span>
+            <h1 className="inst-main text-lg font-bold tracking-tight">Dialogue AI Representative</h1>
           </div>
         </div>
 
